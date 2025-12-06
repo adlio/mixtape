@@ -1,0 +1,17 @@
+/target
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+
+# AI Agent config
+.claude/settings.local.json
+
+# Mixtape test runs
+.mixtape
+
+# Coverage artifacts
+*.profraw
+*.profdata
+lcov.info

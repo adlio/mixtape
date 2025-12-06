@@ -1,0 +1,135 @@
+[package]
+name = "mixtape-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "An agentic AI framework for Rust"
+documentation = "https://docs.rs/mixtape-core"
+readme = "../README.md"
+keywords = ["ai", "agents", "llm", "anthropic", "tools"]
+categories = ["development-tools", "api-bindings", "asynchronous"]
+
+[features]
+default = []
+session = []
+bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
+anthropic = ["dep:mixtape-anthropic-sdk", "dep:base64"]
+mcp = ["dep:rmcp", "dep:reqwest", "dep:shellexpand"]
+
+[dependencies]
+async-stream.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+glob.workspace = true
+dirs.workspace = true
+
+# Bedrock provider (optional)
+aws-config = { workspace = true, optional = true }
+aws-sdk-bedrockruntime = { workspace = true, optional = true }
+aws-smithy-types = { workspace = true, optional = true }
+
+# Anthropic provider (optional)
+mixtape-anthropic-sdk = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+
+# MCP support (optional)
+rmcp = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+shellexpand = { workspace = true, optional = true }
+
+[dev-dependencies]
+uuid.workspace = true
+tokio-test.workspace = true
+mixtape-tools.workspace = true
+mixtape-cli.workspace = true
+aws-sdk-sts.workspace = true
+reqwest.workspace = true
+cargo-husky.workspace = true
+tempfile.workspace = true
+
+# Test binary for mock MCP server
+[[bin]]
+name = "mock_mcp_server"
+path = "tests/bin/mock_mcp_server.rs"
+test = false
+bench = false
+required-features = ["mcp"]
+
+# Examples
+[[example]]
+name = "hello_world"
+required-features = ["bedrock"]
+
+[[example]]
+name = "multi_turn"
+required-features = ["bedrock"]
+
+[[example]]
+name = "streaming"
+required-features = ["bedrock"]
+
+[[example]]
+name = "weather_tool"
+required-features = ["bedrock"]
+
+[[example]]
+name = "interactive_agent"
+required-features = ["bedrock", "mcp", "session"]
+
+[[example]]
+name = "interactive_mcp_agent"
+required-features = ["bedrock", "mcp", "session"]
+
+[[example]]
+name = "hierarchical_agents"
+required-features = ["bedrock"]
+
+[[example]]
+name = "parallel_tools"
+required-features = ["bedrock"]
+
+[[example]]
+name = "lorem_picsum_image"
+required-features = ["bedrock"]
+
+[[example]]
+name = "model_verification"
+required-features = ["bedrock"]
+
+[[example]]
+name = "hello_world_anthropic"
+required-features = ["anthropic"]
+
+[[example]]
+name = "multi_turn_anthropic"
+required-features = ["anthropic"]
+
+[[example]]
+name = "streaming_anthropic"
+required-features = ["anthropic"]
+
+[[example]]
+name = "weather_tool_anthropic"
+required-features = ["anthropic"]
+
+[[example]]
+name = "interactive_mcp_agent_anthropic"
+required-features = ["anthropic", "mcp", "session"]
+
+[[example]]
+name = "parallel_tools_anthropic"
+required-features = ["anthropic"]
+
+[[example]]
+name = "permissions"
+required-features = ["bedrock"]

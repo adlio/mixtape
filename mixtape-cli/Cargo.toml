@@ -1,0 +1,29 @@
+[package]
+name = "mixtape-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Session storage and REPL utilities for the mixtape agent framework"
+documentation = "https://docs.rs/mixtape-cli"
+readme = "README.md"
+keywords = ["ai", "agents", "cli", "repl", "session"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+mixtape-core = { workspace = true, features = ["session"] }
+rusqlite.workspace = true
+rustyline.workspace = true
+tokio.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+crossterm.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+schemars.workspace = true

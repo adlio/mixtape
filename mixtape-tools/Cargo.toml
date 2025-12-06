@@ -1,0 +1,74 @@
+[package]
+name = "mixtape-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ready-to-use tool implementations for the mixtape agent framework"
+documentation = "https://docs.rs/mixtape-tools"
+readme = "README.md"
+keywords = ["ai", "agents", "tools", "filesystem", "llm"]
+categories = ["development-tools", "filesystem", "asynchronous"]
+
+[features]
+default = ["filesystem", "process", "edit", "search", "fetch", "aws", "sqlite"]
+filesystem = []
+process = []
+edit = []
+search = []
+fetch = []
+aws = []
+sqlite = ["dep:rusqlite", "dep:base64", "dep:sha2", "dep:hex"]
+
+[dependencies]
+mixtape-core.workspace = true
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+lazy_static.workspace = true
+chrono.workspace = true
+glob.workspace = true
+regex.workspace = true
+url.workspace = true
+http.workspace = true
+reqwest.workspace = true
+
+# Filesystem
+ignore.workspace = true
+infer.workspace = true
+mime_guess.workspace = true
+
+# Web scraping
+html2md.workspace = true
+robotstxt.workspace = true
+readability-rust.workspace = true
+
+# AWS
+aws-config.workspace = true
+aws-credential-types.workspace = true
+aws-sigv4.workspace = true
+aws-types.workspace = true
+aws-smithy-runtime-api.workspace = true
+
+# Process management
+sysinfo.workspace = true
+
+# String matching
+strsim.workspace = true
+
+# SQLite (optional)
+rusqlite = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wiremock.workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "mixtape-cli"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+mixtape = { path = "../mixtape", features = ["session"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+rustyline = "14.0"
+tokio = { version = "1.41", features = ["full"] }
+chrono = "0.4"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1"
+thiserror = "1.0"
+dirs = "5.0"
+crossterm = "0.28"
+
+[dev-dependencies]
+tempfile = "3.8"
+schemars = "0.8"

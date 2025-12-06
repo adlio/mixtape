@@ -1,0 +1,3 @@
+[workspace]
+members = ["mixtape", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli"]
+resolver = "2"

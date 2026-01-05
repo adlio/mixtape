@@ -23,6 +23,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Tool Groups
+
+For granular permission control, use tool grouping functions:
+
+```rust
+use mixtape_tools::{read_only_filesystem_tools, all_filesystem_tools, all_process_tools};
+
+// Read-only filesystem agent
+let agent = Agent::builder()
+    .bedrock(ClaudeSonnet4_5)
+    .add_tools(read_only_filesystem_tools())
+    .build()
+    .await?;
+
+// Full filesystem access
+let agent = Agent::builder()
+    .bedrock(ClaudeSonnet4_5)
+    .add_tools(all_filesystem_tools())
+    .add_tools(all_process_tools())
+    .build()
+    .await?;
+```
+
+| Function | Count | Description |
+|----------|-------|-------------|
+| `read_only_filesystem_tools()` | 4 | Safe read operations - read files, list directories, get file info |
+| `mutative_filesystem_tools()` | 3 | Destructive operations - write, create, move files |
+| `all_filesystem_tools()` | 7 | All filesystem tools |
+| `all_process_tools()` | 7 | All process management tools |
+
 ## Tools
 
 ### Filesystem

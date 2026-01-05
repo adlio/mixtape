@@ -6,6 +6,20 @@
 //! 2. **DatabaseTool** - Not trusted (always prompts)
 //! 3. **CommandTool** - Not trusted (always prompts)
 //!
+//! For real-world usage with filesystem tools, use tool groups:
+//! ```rust,ignore
+//! use mixtape_tools::{read_only_filesystem_tools, mutative_filesystem_tools};
+//!
+//! let store = MemoryGrantStore::new();
+//! // Trust all read-only operations
+//! for tool in read_only_filesystem_tools() {
+//!     store.grant_tool(tool.name()).await?;
+//! }
+//! // Mutative operations require approval
+//! agent.add_tools(read_only_filesystem_tools())
+//!      .add_tools(mutative_filesystem_tools())
+//! ```
+//!
 //! Run with: cargo run --example permissions --features bedrock
 
 use mixtape_cli::{prompt_for_approval, PermissionRequest, PresentationHook, Verbosity};

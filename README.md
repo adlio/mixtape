@@ -295,6 +295,27 @@ let agent = Agent::builder()
     .await?;
 ```
 
+Grant entire tool groups for convenience:
+
+```rust
+use mixtape_core::MemoryGrantStore;
+use mixtape_tools::read_only_filesystem_tools;
+
+let store = MemoryGrantStore::new();
+
+// Trust all read-only filesystem operations
+for tool in read_only_filesystem_tools() {
+    store.grant_tool(tool.name()).await?;
+}
+
+let agent = Agent::builder()
+    .bedrock(ClaudeSonnet4_5)
+    .add_tools(read_only_filesystem_tools())
+    .with_grant_store(store)
+    .build()
+    .await?;
+```
+
 Tools without a matching grant emit `PermissionRequired` events. See [
 `permissions.rs`](mixtape/examples/permissions.rs).
 

@@ -15,3 +15,18 @@ pub use list_processes::ListProcessesTool;
 pub use list_sessions::ListSessionsTool;
 pub use read_process_output::ReadProcessOutputTool;
 pub use start_process::StartProcessTool;
+
+use mixtape_core::tool::{box_tool, DynTool};
+
+/// Returns all process management tools
+pub fn all_tools() -> Vec<Box<dyn DynTool>> {
+    vec![
+        box_tool(StartProcessTool),
+        box_tool(InteractWithProcessTool),
+        box_tool(ReadProcessOutputTool),
+        box_tool(ListSessionsTool),
+        box_tool(ListProcessesTool),
+        box_tool(KillProcessTool),
+        box_tool(ForceTerminateTool),
+    ]
+}

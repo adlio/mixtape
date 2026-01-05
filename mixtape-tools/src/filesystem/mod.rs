@@ -74,6 +74,7 @@ pub use read_file::ReadFileTool;
 pub use read_multiple_files::ReadMultipleFilesTool;
 pub use write_file::WriteFileTool;
 
+use mixtape_core::tool::{box_tool, DynTool};
 use mixtape_core::ToolError;
 use std::path::{Path, PathBuf};
 
@@ -203,6 +204,36 @@ pub fn validate_path(base_path: &Path, target_path: &Path) -> Result<PathBuf, To
 
         Ok(full_path)
     }
+}
+
+/// Returns all read-only filesystem tools
+///
+/// These tools can read and inspect files but cannot modify the filesystem.
+pub fn read_only_tools() -> Vec<Box<dyn DynTool>> {
+    vec![
+        box_tool(ReadFileTool::default()),
+        box_tool(ReadMultipleFilesTool::default()),
+        box_tool(ListDirectoryTool::default()),
+        box_tool(FileInfoTool::default()),
+    ]
+}
+
+/// Returns all mutative filesystem tools
+///
+/// These tools can modify the filesystem by writing, creating, or moving files.
+pub fn mutative_tools() -> Vec<Box<dyn DynTool>> {
+    vec![
+        box_tool(WriteFileTool::default()),
+        box_tool(CreateDirectoryTool::default()),
+        box_tool(MoveFileTool::default()),
+    ]
+}
+
+/// Returns all filesystem tools
+pub fn all_tools() -> Vec<Box<dyn DynTool>> {
+    let mut tools = read_only_tools();
+    tools.extend(mutative_tools());
+    tools
 }
 
 #[cfg(test)]

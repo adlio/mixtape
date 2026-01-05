@@ -81,6 +81,7 @@ impl ListDirectoryTool {
     }
 
     /// Scan directory and collect entry info (phase 1)
+    #[allow(clippy::only_used_in_recursion)]
     fn scan_directory<'a>(
         &'a self,
         path: PathBuf,

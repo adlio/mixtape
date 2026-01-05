@@ -78,6 +78,8 @@ pub struct AgentBuilder {
     pub(super) authorization_policy: ToolAuthorizationPolicy,
     /// Timeout for authorization requests
     pub(super) authorization_timeout: Duration,
+    /// Tools to automatically grant permissions for
+    trusted_tools: Vec<String>,
     conversation_manager: Option<BoxedConversationManager>,
     #[cfg(feature = "session")]
     session_store: Option<Arc<dyn SessionStore>>,
@@ -110,6 +112,7 @@ impl AgentBuilder {
             grant_store: None,
             authorization_policy: ToolAuthorizationPolicy::default(), // AutoDeny by default
             authorization_timeout: DEFAULT_PERMISSION_TIMEOUT,
+            trusted_tools: Vec::new(),
             conversation_manager: None,
             #[cfg(feature = "session")]
             session_store: None,
@@ -235,6 +238,28 @@ impl AgentBuilder {
         self
     }
 
+    /// Add a trusted tool to the agent with automatic permission grant
+    ///
+    /// This is a convenience method that adds the tool and automatically grants
+    /// permission for it to execute. Use this for tools you trust completely.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let agent = Agent::builder()
+    ///     .bedrock(ClaudeHaiku4_5)
+    ///     .add_trusted_tool(Calculator)
+    ///     .add_trusted_tool(WeatherLookup)
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn add_trusted_tool(mut self, tool: impl Tool + 'static) -> Self {
+        let tool_name = tool.name().to_string();
+        self.tools.push(box_tool(tool));
+        self.trusted_tools.push(tool_name);
+        self
+    }
+
     /// Add multiple tools to the agent
     ///
     /// Accepts pre-boxed dynamic tools, typically from tool group helper functions.
@@ -260,6 +285,32 @@ impl AgentBuilder {
     /// ```
     pub fn add_tools(mut self, tools: impl IntoIterator<Item = Box<dyn DynTool>>) -> Self {
         self.tools.extend(tools);
+        self
+    }
+
+    /// Add multiple trusted tools to the agent with automatic permission grants
+    ///
+    /// This is a convenience method that adds the tools and automatically grants
+    /// permission for them to execute. Use this for tools you trust completely.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mixtape_tools::sqlite;
+    ///
+    /// // Add all read-only SQLite tools as trusted
+    /// let agent = Agent::builder()
+    ///     .bedrock(ClaudeHaiku4_5)
+    ///     .add_trusted_tools(sqlite::read_only_tools())
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn add_trusted_tools(mut self, tools: impl IntoIterator<Item = Box<dyn DynTool>>) -> Self {
+        for tool in tools {
+            let tool_name = tool.name().to_string();
+            self.tools.push(tool);
+            self.trusted_tools.push(tool_name);
+        }
         self
     }
 
@@ -496,6 +547,11 @@ impl AgentBuilder {
             None => ToolCallAuthorizer::new(),
         }
         .with_authorization_policy(self.authorization_policy);
+
+        // Grant permissions for trusted tools
+        for tool_name in &self.trusted_tools {
+            authorizer.grant_tool(tool_name).await?;
+        }
 
         #[allow(unused_mut)]
         let mut agent = Agent {

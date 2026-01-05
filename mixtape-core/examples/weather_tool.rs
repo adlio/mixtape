@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Doc comments on fields become "description" in the JSON schema,
 /// helping the model understand how to use each parameter.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 struct WeatherInput {
     /// Latitude of the location (e.g., 38.8894 for Washington DC)
     latitude: f64,
@@ -149,6 +149,8 @@ impl Tool for WeatherTool {
     }
 
     async fn execute(&self, input: Self::Input) -> Result<ToolResult, ToolError> {
+        eprintln!("{}", serde_json::json!(&input));
+
         // Validate coordinates are roughly within the US
         if input.latitude < 24.0 || input.latitude > 50.0 {
             return Err(ToolError::from(
@@ -165,6 +167,7 @@ impl Tool for WeatherTool {
         let forecast_url = self
             .get_forecast_url(input.latitude, input.longitude)
             .await?;
+        eprintln!("{}", forecast_url);
 
         // Fetch the forecast
         let periods = self.get_forecast(&forecast_url).await?;
@@ -199,13 +202,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              questions about US weather. For non-US locations, explain that the \
              tool only works for US locations.",
         )
-        .add_tool(WeatherTool::new())
+        .add_trusted_tool(WeatherTool::new())
         .build()
         .await?;
 
     // Test with a simple question
     let question = "What's the weather forecast for Portland, OR ? \
-                   (Hint: Portland is 45.5152° N, 122.6784° W)";
+                   (Hint: Portland is Lat: 45.5152, Lng: -122.6784)";
 
     println!("Question: {}\n", question);
     println!("---\n");
@@ -238,6 +241,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             usage.total()
         );
     }
+
+    let response = agent.run("What was the error").await?;
+    println!("{}\n", response.text);
 
     Ok(())
 }

@@ -6,6 +6,7 @@
 use thiserror::Error;
 
 use crate::agent::AgentError;
+use crate::permission::GrantStoreError;
 use crate::provider::ProviderError;
 use crate::tool::ToolError;
 
@@ -136,6 +137,12 @@ impl From<ProviderError> for Error {
 impl From<ToolError> for Error {
     fn from(err: ToolError) -> Self {
         Self::Tool(err.to_string())
+    }
+}
+
+impl From<GrantStoreError> for Error {
+    fn from(err: GrantStoreError) -> Self {
+        Self::Config(format!("grant store error: {}", err))
     }
 }
 

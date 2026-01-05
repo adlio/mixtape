@@ -76,8 +76,8 @@ struct ToolResultLogger;
 impl AgentHook for ToolResultLogger {
     fn on_event(&self, event: &AgentEvent) {
         match event {
-            AgentEvent::ToolStarted { name, .. } => {
-                println!("[Hook] Tool '{}' starting...", name);
+            AgentEvent::ToolRequested { name, .. } => {
+                println!("[Hook] Tool '{}' requested...", name);
             }
             AgentEvent::ToolCompleted {
                 name,

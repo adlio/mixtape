@@ -516,7 +516,7 @@ pub fn format_params_markdown(tool_name: &str, params: &Value) -> String {
 fn result_to_text(result: &ToolResult) -> String {
     match result {
         ToolResult::Text(s) => s.clone(),
-        ToolResult::Json(v) => serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()),
+        ToolResult::Json(v) => format_json_truncated(v),
         ToolResult::Image { format, data } => {
             format!("[Image: {:?}, {} bytes]", format, data.len())
         }
@@ -529,6 +529,75 @@ fn result_to_text(result: &ToolResult) -> String {
                 data.len()
             )
         }
+    }
+}
+
+/// Format JSON with truncated string values and limited object keys
+fn format_json_truncated(value: &Value) -> String {
+    format_json_truncated_inner(value, 0)
+}
+
+fn format_json_truncated_inner(value: &Value, depth: usize) -> String {
+    let indent = "  ".repeat(depth);
+    let child_indent = "  ".repeat(depth + 1);
+
+    match value {
+        Value::String(s) => {
+            if s.len() > MAX_VALUE_LEN {
+                format!("\"{}…\"", &s[..MAX_VALUE_LEN])
+            } else {
+                format!("\"{}\"", s)
+            }
+        }
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                "[]".to_string()
+            } else if arr.len() > MAX_PARAMS {
+                format!("[{} items]", arr.len())
+            } else {
+                let items: Vec<String> = arr
+                    .iter()
+                    .take(MAX_PARAMS)
+                    .map(|v| {
+                        format!(
+                            "{}{}",
+                            child_indent,
+                            format_json_truncated_inner(v, depth + 1)
+                        )
+                    })
+                    .collect();
+                format!("[\n{}\n{}]", items.join(",\n"), indent)
+            }
+        }
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                "{}".to_string()
+            } else {
+                let mut items: Vec<String> = obj
+                    .iter()
+                    .take(MAX_PARAMS)
+                    .map(|(k, v)| {
+                        format!(
+                            "{}\"{}\": {}",
+                            child_indent,
+                            k,
+                            format_json_truncated_inner(v, depth + 1)
+                        )
+                    })
+                    .collect();
+                if obj.len() > MAX_PARAMS {
+                    items.push(format!(
+                        "{}… +{} more",
+                        child_indent,
+                        obj.len() - MAX_PARAMS
+                    ));
+                }
+                format!("{{\n{}\n{}}}", items.join(",\n"), indent)
+            }
+        }
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
     }
 }
 

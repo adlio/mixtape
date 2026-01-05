@@ -325,9 +325,9 @@ async fn test_session_events_with_tools() {
     let has_run_started = events
         .iter()
         .any(|e| matches!(e, AgentEvent::RunStarted { .. }));
-    let has_tool_started = events
+    let has_tool_requested = events
         .iter()
-        .any(|e| matches!(e, AgentEvent::ToolStarted { .. }));
+        .any(|e| matches!(e, AgentEvent::ToolRequested { .. }));
     let has_tool_completed = events
         .iter()
         .any(|e| matches!(e, AgentEvent::ToolCompleted { .. }));
@@ -339,7 +339,7 @@ async fn test_session_events_with_tools() {
         .any(|e| matches!(e, AgentEvent::RunCompleted { .. }));
 
     assert!(has_run_started);
-    assert!(has_tool_started);
+    assert!(has_tool_requested);
     assert!(has_tool_completed);
     assert!(has_session_saved);
     assert!(has_run_completed);

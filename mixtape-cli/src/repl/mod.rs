@@ -19,15 +19,23 @@ use rustyline::{Cmd, Editor, KeyEvent};
 use spinner::Spinner;
 use status::{clear_status_line, update_status_line};
 
-use mixtape_core::Agent;
+use mixtape_core::{Agent, AgentError, AgentEvent, AgentResponse, AuthorizationResponse};
+use serde_json::Value;
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+
+/// Permission request data: (proposal_id, tool_name, params_hash, params)
+type PermissionData = (String, String, String, Value);
 
 pub use approval::{
-    print_confirmation, print_tool_header, prompt_for_approval, read_input, ApprovalPrompter,
-    DefaultPrompter, PermissionRequest, SimplePrompter,
+    print_confirmation, prompt_for_approval, read_input, ApprovalPrompter, DefaultPrompter,
+    PermissionRequest, SimplePrompter,
 };
 pub use commands::Verbosity;
-pub use presentation::{indent_lines, PresentationHook};
+pub use presentation::{
+    indent_lines, new_event_queue, print_result_separator, print_tool_footer, print_tool_header,
+    EventPresenter, PresentationHook,
+};
 
 /// Run an interactive REPL for the agent
 ///
@@ -63,12 +71,41 @@ pub use presentation::{indent_lines, PresentationHook};
 pub async fn run_cli(agent: Agent) -> Result<(), CliError> {
     let agent = Arc::new(agent);
 
-    // Add presentation hook for rich tool display
+    // Event queue for tool presentation (allows controlled output timing)
+    let event_queue = new_event_queue();
+
+    // Add presentation hook that queues events
+    agent.add_hook(PresentationHook::new(Arc::clone(&event_queue)));
+
+    // Presenter for formatting and printing queued events
     let verbosity = Arc::new(Mutex::new(Verbosity::Normal));
-    agent.add_hook(PresentationHook::new(
+    let presenter = EventPresenter::new(
         Arc::clone(&agent),
         Arc::clone(&verbosity),
-    ));
+        Arc::clone(&event_queue),
+    );
+
+    // Set up permission handling channel (once, for entire session)
+    let (perm_tx, perm_rx) = mpsc::unbounded_channel::<PermissionData>();
+    let perm_rx = Arc::new(tokio::sync::Mutex::new(perm_rx));
+    agent.add_hook(move |event: &AgentEvent| {
+        if let AgentEvent::PermissionRequired {
+            proposal_id,
+            tool_name,
+            params_hash,
+            params,
+            ..
+        } = event
+        {
+            let _ = perm_tx.send((
+                proposal_id.clone(),
+                tool_name.clone(),
+                params_hash.clone(),
+                params.clone(),
+            ));
+        }
+    });
+
     print_welcome(&agent).await?;
 
     let config = Config::default();
@@ -118,22 +155,23 @@ pub async fn run_cli(agent: Agent) -> Result<(), CliError> {
                 println!(); // Move to new line, clearing input background
                 let spinner = Spinner::new("thinking");
 
-                // Regular agent interaction
-                match agent.run(line).await {
-                    Ok(response) => {
-                        // Stop spinner and clear the line
-                        spinner.stop().await;
-                        println!("\n{}\n", response);
+                // Run agent with permission handling
+                let result = run_with_permissions(
+                    Arc::clone(&agent),
+                    line.to_string(),
+                    spinner,
+                    Arc::clone(&perm_rx),
+                    &presenter,
+                )
+                .await;
 
-                        // Update status line with new context usage
+                match result {
+                    Ok(response) => {
+                        println!("\n{}\n", response);
                         update_status_line(&agent);
                     }
                     Err(e) => {
-                        // Stop spinner and print error
-                        spinner.stop().await;
                         eprintln!("❌ Error: {}\n", e);
-
-                        // Update status line even after error
                         update_status_line(&agent);
                     }
                 }
@@ -168,4 +206,86 @@ pub async fn run_cli(agent: Agent) -> Result<(), CliError> {
 
     println!("\n👋 Goodbye!\n");
     Ok(())
+}
+
+/// Run agent with interactive permission handling
+async fn run_with_permissions<F: formatter::ToolFormatter>(
+    agent: Arc<Agent>,
+    input: String,
+    spinner: Spinner,
+    perm_rx: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<PermissionData>>>,
+    presenter: &EventPresenter<F>,
+) -> Result<AgentResponse, AgentError> {
+    // Spawn agent run in background
+    let agent_clone = Arc::clone(&agent);
+    let mut handle = tokio::spawn(async move { agent_clone.run(&input).await });
+
+    // Lock the receiver for this run
+    let mut rx = perm_rx.lock().await;
+
+    // Track if spinner is still active
+    let mut spinner = Some(spinner);
+
+    // Wait for permission requests or agent completion
+    loop {
+        tokio::select! {
+            biased;  // Always check permission requests first
+
+            // Check for permission requests
+            Some((proposal_id, tool_name, params_hash, params)) = rx.recv() => {
+                // Stop spinner before prompting for input
+                if let Some(s) = spinner.take() {
+                    s.stop().await;
+                }
+
+                // Print any queued output before showing the prompt
+                presenter.flush();
+
+                // Format tool input for display in approval prompt
+                let formatted_display =
+                    agent.format_tool_input(&tool_name, &params, mixtape_core::Display::Cli);
+
+                let request = PermissionRequest {
+                    tool_name: tool_name.clone(),
+                    tool_use_id: proposal_id.clone(),
+                    params_hash: params_hash.clone(),
+                    formatted_display,
+                };
+
+                let response = approval::prompt_for_approval(&request);
+
+                match response {
+                    AuthorizationResponse::Once => {
+                        agent.authorize_once(&proposal_id).await.ok();
+                    }
+                    AuthorizationResponse::Trust { grant } => {
+                        agent
+                            .respond_to_authorization(
+                                &proposal_id,
+                                AuthorizationResponse::Trust { grant },
+                            )
+                            .await
+                            .ok();
+                    }
+                    AuthorizationResponse::Deny { reason } => {
+                        agent.deny_authorization(&proposal_id, reason).await.ok();
+                    }
+                }
+
+                // Restart spinner after handling permission
+                spinner = Some(Spinner::new("thinking"));
+            }
+
+            // Agent finished
+            result = &mut handle => {
+                // Stop spinner if still running
+                if let Some(s) = spinner.take() {
+                    s.stop().await;
+                }
+                // Print any remaining queued output
+                presenter.flush();
+                return result.unwrap_or_else(|e| Err(AgentError::Tool(e.to_string().into())));
+            }
+        }
+    }
 }

@@ -691,7 +691,7 @@ impl VerboseLogger {
 impl AgentHook for VerboseLogger {
     fn on_event(&self, event: &AgentEvent) {
         match event {
-            AgentEvent::ToolStarted { name, input, .. } => {
+            AgentEvent::ToolRequested { name, input, .. } => {
                 println!("     [tool] {} called with:", name);
                 // Pretty print the input, indented
                 let input_str =

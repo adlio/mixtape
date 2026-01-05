@@ -5,7 +5,7 @@ use std::time::Instant;
 use futures::stream::{self, StreamExt};
 use serde_json::Value;
 
-use crate::events::{AgentEvent, ToolApprovalStatus};
+use crate::events::AgentEvent;
 use crate::permission::{Authorization, AuthorizationResponse};
 use crate::tool::{box_tool, ToolResult};
 use crate::types::{Message, ToolResultBlock, ToolResultStatus, ToolUseBlock};
@@ -90,6 +90,13 @@ impl Agent {
         let tool_name = tool_use.name.clone();
         let input = tool_use.input.clone();
 
+        // Emit ToolRequested (always fires exactly once)
+        self.emit_event(AgentEvent::ToolRequested {
+            tool_use_id: tool_id.clone(),
+            name: tool_name.clone(),
+            input: input.clone(),
+        });
+
         // Validate that input is a JSON object (per Anthropic/Bedrock spec)
         if !input.is_object() {
             let type_name = match &input {
@@ -102,7 +109,7 @@ impl Agent {
             };
             let error_msg = format!("Tool input must be a JSON object, got: {}", type_name);
             self.emit_event(AgentEvent::ToolFailed {
-                id: tool_id,
+                tool_use_id: tool_id,
                 name: tool_name,
                 error: error_msg.clone(),
                 duration: tool_start.elapsed(),
@@ -115,9 +122,8 @@ impl Agent {
             .iter()
             .find(|t| t.name() == tool_use.name)
             .ok_or_else(|| {
-                // Emit tool failed event for tool not found
                 self.emit_event(AgentEvent::ToolFailed {
-                    id: tool_id.clone(),
+                    tool_use_id: tool_id.clone(),
                     name: tool_name.clone(),
                     error: format!("Tool not found: {}", tool_name),
                     duration: tool_start.elapsed(),
@@ -125,38 +131,31 @@ impl Agent {
                 AgentError::ToolNotFound(tool_name.clone())
             })?;
 
-        // Determine approval status and whether to request approval
-        let approval_status = self
-            .check_tool_approval(&tool_id, &tool_name, &input, tool.as_ref(), tool_start)
+        // Check approval (emits permission events as needed)
+        self.check_tool_approval(&tool_id, &tool_name, &input, tool_start)
             .await?;
 
-        // Emit tool started event
-        self.emit_event(AgentEvent::ToolStarted {
-            id: tool_id.clone(),
+        // Emit ToolExecuting (after permission granted)
+        self.emit_event(AgentEvent::ToolExecuting {
+            tool_use_id: tool_id.clone(),
             name: tool_name.clone(),
-            input: input.clone(),
-            approval_status,
-            timestamp: tool_start,
         });
 
         // Execute the tool
         match tool.execute_raw(input).await {
             Ok(result) => {
-                // Emit tool completed event
                 self.emit_event(AgentEvent::ToolCompleted {
-                    id: tool_id,
+                    tool_use_id: tool_id,
                     name: tool_name,
                     output: result.clone(),
-                    approval_status,
                     duration: tool_start.elapsed(),
                 });
                 Ok(result)
             }
             Err(e) => {
-                // Emit tool failed event
                 let error_msg = e.to_string();
                 self.emit_event(AgentEvent::ToolFailed {
-                    id: tool_id,
+                    tool_use_id: tool_id,
                     name: tool_name,
                     error: error_msg,
                     duration: tool_start.elapsed(),
@@ -172,29 +171,27 @@ impl Agent {
         tool_id: &str,
         tool_name: &str,
         input: &Value,
-        _tool: &dyn crate::tool::DynTool,
         tool_start: Instant,
-    ) -> Result<ToolApprovalStatus, AgentError> {
+    ) -> Result<(), AgentError> {
         let authorizer = self.authorizer.read().await;
 
         match authorizer.check(tool_name, input).await {
             Authorization::Granted { grant } => {
-                // Emit grant event for transparency
                 self.emit_event(AgentEvent::PermissionGranted {
-                    proposal_id: format!("{}_{}", tool_name, tool_id),
+                    tool_use_id: tool_id.to_string(),
+                    tool_name: tool_name.to_string(),
                     scope: Some(grant.scope),
                 });
-                Ok(ToolApprovalStatus::AutoApproved)
+                Ok(())
             }
             Authorization::Denied { reason } => {
-                // Immediately denied by policy (no grant and policy is Deny)
-                let proposal_id = format!("{}_{}", tool_name, tool_id);
                 self.emit_event(AgentEvent::PermissionDenied {
-                    proposal_id,
+                    tool_use_id: tool_id.to_string(),
+                    tool_name: tool_name.to_string(),
                     reason: reason.clone(),
                 });
                 self.emit_event(AgentEvent::ToolFailed {
-                    id: tool_id.to_string(),
+                    tool_use_id: tool_id.to_string(),
                     name: tool_name.to_string(),
                     error: reason,
                     duration: tool_start.elapsed(),
@@ -205,17 +202,8 @@ impl Agent {
                 // Need to drop the lock before requesting authorization
                 drop(authorizer);
 
-                // Request authorization via event-based system
-                let proposal_id = format!("{}_{}", tool_name, tool_id);
-                self.request_authorization(
-                    proposal_id,
-                    tool_id,
-                    tool_name,
-                    input,
-                    params_hash,
-                    tool_start,
-                )
-                .await
+                self.request_authorization(tool_id, tool_name, input, params_hash, tool_start)
+                    .await
             }
         }
     }
@@ -223,15 +211,16 @@ impl Agent {
     /// Request authorization for a tool
     async fn request_authorization(
         &self,
-        proposal_id: String,
         tool_id: &str,
         tool_name: &str,
         input: &Value,
         params_hash: String,
         tool_start: Instant,
-    ) -> Result<ToolApprovalStatus, AgentError> {
-        // Event-based authorization
+    ) -> Result<(), AgentError> {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<AuthorizationResponse>(1);
+
+        // Use tool_id as proposal_id for consistency
+        let proposal_id = tool_id.to_string();
 
         // Register pending authorization
         {
@@ -255,7 +244,8 @@ impl Agent {
             },
             Err(_) => {
                 self.emit_event(AgentEvent::PermissionDenied {
-                    proposal_id: proposal_id.clone(),
+                    tool_use_id: tool_id.to_string(),
+                    tool_name: tool_name.to_string(),
                     reason: "Authorization request timed out".to_string(),
                 });
                 AuthorizationResponse::Deny {
@@ -273,10 +263,11 @@ impl Agent {
         match response {
             AuthorizationResponse::Once => {
                 self.emit_event(AgentEvent::PermissionGranted {
-                    proposal_id,
+                    tool_use_id: tool_id.to_string(),
+                    tool_name: tool_name.to_string(),
                     scope: None,
                 });
-                Ok(ToolApprovalStatus::UserApproved)
+                Ok(())
             }
             AuthorizationResponse::Trust { grant } => {
                 // Save the grant to the authorizer
@@ -292,20 +283,22 @@ impl Agent {
                     eprintln!("Warning: Failed to save grant: {}", e);
                 }
                 self.emit_event(AgentEvent::PermissionGranted {
-                    proposal_id,
+                    tool_use_id: tool_id.to_string(),
+                    tool_name: tool_name.to_string(),
                     scope: Some(grant.scope),
                 });
-                Ok(ToolApprovalStatus::UserApproved)
+                Ok(())
             }
             AuthorizationResponse::Deny { reason } => {
                 let reason_str =
                     reason.unwrap_or_else(|| "Authorization denied by user".to_string());
                 self.emit_event(AgentEvent::PermissionDenied {
-                    proposal_id,
+                    tool_use_id: tool_id.to_string(),
+                    tool_name: tool_name.to_string(),
                     reason: reason_str,
                 });
                 self.emit_event(AgentEvent::ToolFailed {
-                    id: tool_id.to_string(),
+                    tool_use_id: tool_id.to_string(),
                     name: tool_name.to_string(),
                     error: "Tool execution denied by user".to_string(),
                     duration: tool_start.elapsed(),

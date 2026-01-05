@@ -56,19 +56,15 @@ impl ApprovalPrompter for SimplePrompter {
         "SimplePrompter"
     }
 
-    fn prompt(&self, request: &PermissionRequest) -> AuthorizationResponse {
-        // Print the tool call header
-        print_tool_header(request);
-
-        // Print options
-        println!("\n\x1b[33mPermission required:\x1b[0m");
-        println!("  \x1b[1my\x1b[0m  approve once");
-        println!("  \x1b[1me\x1b[0m  trust this exact call (session)");
-        println!("  \x1b[1mt\x1b[0m  trust entire tool (session)");
-        println!("  \x1b[1mn\x1b[0m  deny");
+    fn prompt(&self, _request: &PermissionRequest) -> AuthorizationResponse {
+        // Tool name and params already displayed by ToolRequested event
+        println!("│");
+        println!(
+            "│  \x1b[33mApprove?\x1b[0m  \x1b[2m(y)es  (n)o  (t)rust tool  (e)xact match\x1b[0m"
+        );
 
         loop {
-            print!("\nChoice: ");
+            print!("│  > ");
             let _ = stdout().flush();
 
             let input = read_input();
@@ -76,27 +72,23 @@ impl ApprovalPrompter for SimplePrompter {
 
             match input.as_str() {
                 "y" | "yes" => {
-                    print_confirmation("Approved once");
                     return AuthorizationResponse::Once;
                 }
                 "e" | "exact" => {
-                    let grant = Grant::exact(&request.tool_name, &request.params_hash)
+                    let grant = Grant::exact(&_request.tool_name, &_request.params_hash)
                         .with_scope(Scope::Session);
-                    print_confirmation("Trusted exact call for session");
                     return AuthorizationResponse::Trust { grant };
                 }
                 "t" | "tool" | "trust" => {
-                    let grant = Grant::tool(&request.tool_name).with_scope(Scope::Session);
-                    print_confirmation("Trusted entire tool for session");
+                    let grant = Grant::tool(&_request.tool_name).with_scope(Scope::Session);
                     return AuthorizationResponse::Trust { grant };
                 }
                 "n" | "no" | "deny" => {
-                    print_confirmation("Denied");
                     return AuthorizationResponse::Deny { reason: None };
                 }
                 "" => continue,
                 _ => {
-                    println!("\x1b[31mInvalid choice. Use y/e/t/n\x1b[0m");
+                    println!("│  \x1b[31mUse y/n/t/e\x1b[0m");
                 }
             }
         }
@@ -109,17 +101,6 @@ pub type DefaultPrompter = SimplePrompter;
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-/// Print the tool header with emoji
-pub fn print_tool_header(request: &PermissionRequest) {
-    println!("\n🛠️  \x1b[1m{}\x1b[0m", request.tool_name);
-
-    if let Some(ref display) = request.formatted_display {
-        for line in display.lines() {
-            println!("  {}", line);
-        }
-    }
-}
 
 /// Read a line of input
 pub fn read_input() -> String {

@@ -413,7 +413,7 @@ async fn test_agent_mcp_tool_events() {
 
     // Should have tool events
     let events = collector_clone.events();
-    assert!(events.contains(&"tool_started".to_string()));
+    assert!(events.contains(&"tool_requested".to_string()));
     assert!(events.contains(&"tool_completed".to_string()));
 
     agent.shutdown().await;

@@ -22,7 +22,10 @@
 //!
 //! Run with: cargo run --example permissions --features bedrock
 
-use mixtape_cli::{prompt_for_approval, PermissionRequest, PresentationHook, Verbosity};
+use mixtape_cli::{
+    new_event_queue, prompt_for_approval, EventPresenter, PermissionRequest, PresentationHook,
+    Verbosity,
+};
 use mixtape_core::{
     Agent, AgentEvent, AuthorizationResponse, ClaudeHaiku4_5, MemoryGrantStore, Tool, ToolError,
     ToolResult,
@@ -68,6 +71,14 @@ struct DatabaseInput {
     table: String,
 }
 
+#[derive(Serialize)]
+struct DatabaseResult {
+    operation: String,
+    table: String,
+    rows_affected: u32,
+    success: bool,
+}
+
 struct DatabaseTool;
 
 impl Tool for DatabaseTool {
@@ -82,10 +93,13 @@ impl Tool for DatabaseTool {
     }
 
     async fn execute(&self, input: Self::Input) -> Result<ToolResult, ToolError> {
-        Ok(ToolResult::text(format!(
-            "Database: {} on table '{}' completed successfully",
-            input.operation, input.table
-        )))
+        let result = DatabaseResult {
+            operation: input.operation,
+            table: input.table,
+            rows_affected: 42,
+            success: true,
+        };
+        Ok(ToolResult::json(&result)?)
     }
 }
 
@@ -109,12 +123,8 @@ impl Tool for CommandTool {
         "Execute a shell command (dangerous! requires approval)"
     }
 
-    async fn execute(&self, input: Self::Input) -> Result<ToolResult, ToolError> {
-        // In a real implementation, this would execute the command
-        Ok(ToolResult::text(format!(
-            "Command executed: {}",
-            input.command
-        )))
+    async fn execute(&self, _input: Self::Input) -> Result<ToolResult, ToolError> {
+        Ok(ToolResult::text(""))
     }
 }
 
@@ -126,11 +136,7 @@ impl Tool for CommandTool {
 async fn main() -> mixtape_core::Result<()> {
     // Create memory store with pre-configured grants
     let store = MemoryGrantStore::new();
-
-    // Trust EchoTool entirely - any invocation is auto-approved
     store.grant_tool("echo").await.unwrap();
-
-    // DatabaseTool and CommandTool have no grants - always require approval
 
     println!();
     println!("\x1b[1;36m========================================\x1b[0m");
@@ -143,10 +149,9 @@ async fn main() -> mixtape_core::Result<()> {
     println!("  \x1b[31m-\x1b[0m command   -> not trusted (prompts)");
     println!();
 
-    // Create the agent with the grant store
     let agent = Agent::builder()
         .bedrock(ClaudeHaiku4_5)
-        .interactive() // Enable permission prompts for tools without grants
+        .interactive()
         .with_system_prompt(
             "You are a helpful assistant with access to three tools:
 1. echo - Echo a message back
@@ -164,60 +169,33 @@ When asked to demonstrate the tools, use them in sequence.",
 
     let agent = Arc::new(agent);
 
-    // Use the CLI's standard presentation hook for tool display
-    let verbosity = Arc::new(Mutex::new(Verbosity::Verbose));
-    agent.add_hook(PresentationHook::new(
-        Arc::clone(&agent),
-        Arc::clone(&verbosity),
-    ));
+    // Set up standard presentation hook
+    let event_queue = new_event_queue();
+    agent.add_hook(PresentationHook::new(Arc::clone(&event_queue)));
 
-    // Shared state for permission responses
-    #[allow(clippy::type_complexity)]
-    let pending: Arc<tokio::sync::Mutex<Option<(String, String, String)>>> =
-        Arc::new(tokio::sync::Mutex::new(None));
-    let pending_clone = pending.clone();
+    let verbosity = Arc::new(Mutex::new(Verbosity::Normal));
+    let presenter = EventPresenter::new(Arc::clone(&agent), verbosity, Arc::clone(&event_queue));
 
-    // Add hook to handle permission events only
+    // Channel for permission requests
+    let (perm_tx, mut perm_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String, String)>();
     agent.add_hook(move |event: &AgentEvent| {
-        match event {
-            AgentEvent::PermissionGranted { scope, .. } => {
-                if let Some(s) = scope {
-                    println!("  \x1b[32m+ auto-approved\x1b[0m \x1b[2m[{}]\x1b[0m", s);
-                } else {
-                    println!("  \x1b[32m+ approved\x1b[0m");
-                }
-            }
-            AgentEvent::PermissionRequired {
-                proposal_id,
-                tool_name,
-                params_hash,
-                ..
-            } => {
-                // Store for async handling
-                let pending_inner = pending_clone.clone();
-                let id = proposal_id.clone();
-                let tool = tool_name.clone();
-                let hash = params_hash.clone();
-                tokio::spawn(async move {
-                    let mut guard = pending_inner.lock().await;
-                    *guard = Some((id, tool, hash));
-                });
-            }
-            AgentEvent::PermissionDenied { reason, .. } => {
-                println!("  \x1b[31m- denied: {}\x1b[0m", reason);
-            }
-            _ => {}
+        if let AgentEvent::PermissionRequired {
+            proposal_id,
+            tool_name,
+            params_hash,
+            ..
+        } = event
+        {
+            let _ = perm_tx.send((proposal_id.clone(), tool_name.clone(), params_hash.clone()));
         }
     });
 
-    // Demonstrate with a prompt that triggers all three tools
     println!("\x1b[2m----------------------------------------\x1b[0m");
     println!("\x1b[1mAsking agent to use all tools...\x1b[0m");
     println!("\x1b[2m----------------------------------------\x1b[0m");
 
-    // Spawn the agent run in background
     let agent_clone = agent.clone();
-    let response_handle = tokio::spawn(async move {
+    let mut response_handle = tokio::spawn(async move {
         agent_clone
             .run(
                 "Please demonstrate all three tools:
@@ -231,61 +209,46 @@ Execute each tool one at a time and report the results.",
             .await
     });
 
-    // Poll for permission requests and handle them using the CLI's approval prompt
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::select! {
+            Some((proposal_id, tool_name, params_hash)) = perm_rx.recv() => {
+                presenter.flush();
 
-        // Check if there's a pending permission request
-        let pending_request = {
-            let mut guard = pending.lock().await;
-            guard.take()
-        };
+                let request = PermissionRequest {
+                    tool_name: tool_name.clone(),
+                    tool_use_id: proposal_id.clone(),
+                    params_hash,
+                    formatted_display: None,
+                };
 
-        if let Some((proposal_id, tool_name, params_hash)) = pending_request {
-            // Use the CLI's standard approval prompt
-            let request = PermissionRequest {
-                tool_name: tool_name.clone(),
-                tool_use_id: proposal_id.clone(),
-                params_hash: params_hash.clone(),
-                formatted_display: None,
-            };
-
-            let choice = prompt_for_approval(&request);
-
-            // Respond to the agent based on user's choice
-            match choice {
-                AuthorizationResponse::Once => {
-                    agent.authorize_once(&proposal_id).await.ok();
-                }
-                AuthorizationResponse::Trust { grant } => {
-                    agent
-                        .respond_to_authorization(
-                            &proposal_id,
-                            AuthorizationResponse::Trust { grant },
-                        )
-                        .await
-                        .ok();
-                }
-                AuthorizationResponse::Deny { reason } => {
-                    agent.deny_authorization(&proposal_id, reason).await.ok();
+                let choice = prompt_for_approval(&request);
+                match choice {
+                    AuthorizationResponse::Once => {
+                        agent.authorize_once(&proposal_id).await.ok();
+                    }
+                    AuthorizationResponse::Trust { grant } => {
+                        agent
+                            .respond_to_authorization(&proposal_id, AuthorizationResponse::Trust { grant })
+                            .await
+                            .ok();
+                    }
+                    AuthorizationResponse::Deny { reason } => {
+                        agent.deny_authorization(&proposal_id, reason).await.ok();
+                    }
                 }
             }
-        }
-
-        // Check if the response task is done
-        if response_handle.is_finished() {
-            break;
+            result = &mut response_handle => {
+                presenter.flush();
+                let response = result.unwrap()?;
+                println!();
+                println!("\x1b[2m----------------------------------------\x1b[0m");
+                println!("\x1b[1mAgent response:\x1b[0m");
+                println!("\x1b[2m----------------------------------------\x1b[0m");
+                println!("{}", response);
+                break;
+            }
         }
     }
-
-    // Get the final response
-    let response = response_handle.await.unwrap()?;
-
-    println!();
-    println!("\x1b[2m----------------------------------------\x1b[0m");
-    println!("\x1b[1mAgent response:\x1b[0m");
-    println!("\x1b[2m----------------------------------------\x1b[0m");
-    println!("{}", response);
 
     Ok(())
 }

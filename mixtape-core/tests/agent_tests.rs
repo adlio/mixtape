@@ -179,9 +179,9 @@ async fn test_hooks_with_tool_execution() {
     let events = collector_clone.events();
 
     // Should see: run_started, model_call_started, model_call_completed,
-    // tool_started, tool_completed, model_call_started, model_call_completed, run_completed
+    // tool_requested, tool_executing, tool_completed, model_call_started, model_call_completed, run_completed
     assert!(events.contains(&"run_started".to_string()));
-    assert!(events.contains(&"tool_started".to_string()));
+    assert!(events.contains(&"tool_requested".to_string()));
     assert!(events.contains(&"tool_completed".to_string()));
     assert!(events.contains(&"run_completed".to_string()));
 }
@@ -401,16 +401,16 @@ async fn test_tool_event_details() {
 
     let events = collector_clone.events();
 
-    // Verify ToolStarted event
-    let tool_started = events.iter().find_map(|e| {
-        if let AgentEvent::ToolStarted { name, input, .. } = e {
+    // Verify ToolRequested event
+    let tool_requested = events.iter().find_map(|e| {
+        if let AgentEvent::ToolRequested { name, input, .. } = e {
             Some((name, input))
         } else {
             None
         }
     });
-    assert!(tool_started.is_some());
-    let (name, input) = tool_started.unwrap();
+    assert!(tool_requested.is_some());
+    let (name, input) = tool_requested.unwrap();
     assert_eq!(name, "calculate");
     assert_eq!(input["expression"], "2+2");
 

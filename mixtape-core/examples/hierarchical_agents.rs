@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add hook to show delegation in action
     orchestrator.add_hook(|event: &AgentEvent| match event {
-        AgentEvent::ToolStarted { name, .. } => {
+        AgentEvent::ToolRequested { name, .. } => {
             println!("  🔀 Delegating to {}...", name);
         }
         AgentEvent::ToolCompleted { name, duration, .. } => {

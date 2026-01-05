@@ -6,17 +6,6 @@ use crate::permission::Scope;
 use crate::tool::ToolResult;
 use crate::types::StopReason;
 
-/// Status indicating how a tool execution was approved
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToolApprovalStatus {
-    /// Tool was automatically approved (in registry or AutoApproveAll mode)
-    AutoApproved,
-    /// Tool was explicitly approved by user
-    UserApproved,
-    /// Approval system not configured for this agent
-    NotRequired,
-}
-
 /// Events emitted during agent execution
 ///
 /// These events allow observers to track agent lifecycle, model calls,
@@ -80,43 +69,45 @@ pub enum AgentEvent {
     },
 
     // ===== Tool Lifecycle =====
-    /// Tool execution started
-    ToolStarted {
-        /// Unique ID for this tool execution
-        id: String,
+    /// Model requested a tool (fires exactly once per tool use)
+    ToolRequested {
+        /// Unique ID for this tool use
+        tool_use_id: String,
         /// Tool name
         name: String,
         /// Input parameters
         input: Value,
-        /// How this tool execution was approved
-        approval_status: ToolApprovalStatus,
-        /// Timestamp
-        timestamp: Instant,
+    },
+
+    /// Tool execution actually starting (after permission granted)
+    ToolExecuting {
+        /// Unique ID for this tool use
+        tool_use_id: String,
+        /// Tool name
+        name: String,
     },
 
     /// Tool execution completed successfully
     ToolCompleted {
-        /// Matching ID from ToolStarted
-        id: String,
+        /// Matching ID from ToolRequested
+        tool_use_id: String,
         /// Tool name
         name: String,
         /// Tool output
         output: ToolResult,
-        /// How this tool execution was approved
-        approval_status: ToolApprovalStatus,
         /// Execution duration
         duration: Duration,
     },
 
     /// Tool execution failed
     ToolFailed {
-        /// Matching ID from ToolStarted
-        id: String,
+        /// Matching ID from ToolRequested
+        tool_use_id: String,
         /// Tool name
         name: String,
         /// Error message
         error: String,
-        /// How long it ran before failing
+        /// How long before failure
         duration: Duration,
     },
 
@@ -133,18 +124,22 @@ pub enum AgentEvent {
         params_hash: String,
     },
 
-    /// Permission granted
+    /// Permission granted (auto-approved or user-approved)
     PermissionGranted {
-        /// Matching proposal ID
-        proposal_id: String,
+        /// Tool use ID
+        tool_use_id: String,
+        /// Tool name
+        tool_name: String,
         /// The scope of the grant (None if one-time approval)
         scope: Option<Scope>,
     },
 
     /// Permission denied
     PermissionDenied {
-        /// Matching proposal ID
-        proposal_id: String,
+        /// Tool use ID
+        tool_use_id: String,
+        /// Tool name
+        tool_name: String,
         /// Reason for denial
         reason: String,
     },
@@ -200,8 +195,8 @@ impl TokenUsage {
 ///             AgentEvent::RunStarted { input, .. } => {
 ///                 println!("Starting: {}", input);
 ///             }
-///             AgentEvent::ToolStarted { name, .. } => {
-///                 println!("Running tool: {}", name);
+///             AgentEvent::ToolRequested { name, .. } => {
+///                 println!("Tool requested: {}", name);
 ///             }
 ///             _ => {}
 ///         }
@@ -251,17 +246,5 @@ mod tests {
                 output
             );
         }
-    }
-
-    #[test]
-    fn test_tool_approval_status_variants() {
-        // Just verify all variants exist and are distinct
-        let auto = ToolApprovalStatus::AutoApproved;
-        let user = ToolApprovalStatus::UserApproved;
-        let not_required = ToolApprovalStatus::NotRequired;
-
-        assert_ne!(auto, user);
-        assert_ne!(auto, not_required);
-        assert_ne!(user, not_required);
     }
 }

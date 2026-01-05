@@ -154,7 +154,7 @@ pub use conversation::{
     TokenEstimator,
 };
 pub use error::{Error, Result};
-pub use events::{AgentEvent, AgentHook, TokenUsage, ToolApprovalStatus};
+pub use events::{AgentEvent, AgentHook, TokenUsage};
 
 pub use model::{
     AnthropicModel, BedrockModel, InferenceProfile, Model, ModelRequest, ModelResponse,

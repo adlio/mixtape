@@ -140,8 +140,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              For Rust questions, use rust_specialist. For Python questions, use python_specialist. \
              After receiving their answer, you can synthesize or add context if helpful.",
         )
-        .add_tool(rust_tool)
-        .add_tool(python_tool)
+        .add_trusted_tool(rust_tool)
+        .add_trusted_tool(python_tool)
         .build()
         .await?;
 

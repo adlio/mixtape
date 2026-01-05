@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create agent with image tool
     let agent = Agent::builder()
         .bedrock(Nova2Lite)
-        .add_tool(GetTestImageTool::new())
+        .add_trusted_tool(GetTestImageTool::new())
         .build()
         .await?;
 

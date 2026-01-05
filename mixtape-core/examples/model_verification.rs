@@ -785,8 +785,8 @@ async fn run_test(info: &ModelInfo) -> TestResult {
     // Create agent with tools
     let agent = Agent::builder()
         .provider(provider)
-        .add_tool(Calculator)
-        .add_tool(Weather)
+        .add_trusted_tool(Calculator)
+        .add_trusted_tool(Weather)
         .build()
         .await
         .unwrap();

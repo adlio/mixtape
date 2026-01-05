@@ -194,7 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
              questions about US weather. For non-US locations, explain that the \
              tool only works for US locations.",
         )
-        .add_tool(WeatherTool::new())
+        .add_trusted_tool(WeatherTool::new())
         .build()
         .await?;
 

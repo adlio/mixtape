@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_system_prompt("You are a helpful assistant that can run slow tasks in parallel.")
         .with_conversation_manager(SimpleConversationManager::new(10)) // Keep last 10 messages
         .with_max_concurrent_tools(12)
-        .add_tool(SlowTool)
+        .add_trusted_tool(SlowTool)
         .build()
         .await?;
 

@@ -6,6 +6,7 @@ mod core;
 mod formatter;
 mod input;
 mod presentation;
+mod spinner;
 mod status;
 
 use crate::error::CliError;
@@ -15,10 +16,10 @@ use input::InputStyleHelper;
 use rustyline::config::Config;
 use rustyline::error::ReadlineError;
 use rustyline::{Cmd, Editor, KeyEvent};
+use spinner::Spinner;
 use status::{clear_status_line, update_status_line};
 
 use mixtape_core::Agent;
-use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 pub use approval::{
@@ -113,23 +114,23 @@ pub async fn run_cli(agent: Agent) -> Result<(), CliError> {
                     }
                 }
 
-                // Show thinking indicator
-                print!("\n\x1b[2m⋯ thinking\x1b[0m");
-                let _ = std::io::stdout().flush();
+                // Show animated thinking indicator
+                println!(); // Move to new line, clearing input background
+                let spinner = Spinner::new("thinking");
 
                 // Regular agent interaction
                 match agent.run(line).await {
                     Ok(response) => {
-                        // Clear the thinking indicator line and print response
-                        print!("\r\x1b[2K");
+                        // Stop spinner and clear the line
+                        spinner.stop().await;
                         println!("\n{}\n", response);
 
                         // Update status line with new context usage
                         update_status_line(&agent);
                     }
                     Err(e) => {
-                        // Clear the thinking indicator line and print error
-                        print!("\r\x1b[2K");
+                        // Stop spinner and print error
+                        spinner.stop().await;
                         eprintln!("❌ Error: {}\n", e);
 
                         // Update status line even after error

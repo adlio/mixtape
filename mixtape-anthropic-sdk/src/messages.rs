@@ -24,6 +24,59 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ============================================================================
+// Beta Features
+// ============================================================================
+
+/// Beta features that can be enabled via the `anthropic-beta` header
+///
+/// Beta features are experimental capabilities that require explicit opt-in.
+/// Use these with the `.betas()` builder method or convenience methods like
+/// `.with_1m_context()`.
+///
+/// # Example
+///
+/// ```
+/// use mixtape_anthropic_sdk::{MessageCreateParams, BetaFeature};
+///
+/// let params = MessageCreateParams::builder("claude-sonnet-4-5-20250929", 8192)
+///     .betas(vec![BetaFeature::Context1M])
+///     .user("Analyze this large document...")
+///     .build();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum BetaFeature {
+    /// Extended 1M token context window for Claude Sonnet 4/4.5
+    ///
+    /// Expands the context window from 200K to 1 million tokens.
+    /// Only supported on Claude Sonnet 4 and Claude Sonnet 4.5 models.
+    ///
+    /// **Pricing**: ~2x input, ~1.5x output when prompts exceed 200K tokens.
+    Context1M,
+
+    /// A custom beta feature identifier for forward compatibility
+    ///
+    /// Use this for beta features not yet added to this enum.
+    Custom(String),
+}
+
+impl BetaFeature {
+    /// Get the API identifier string for this beta feature
+    pub fn as_str(&self) -> &str {
+        match self {
+            BetaFeature::Context1M => "context-1m-2025-08-07",
+            BetaFeature::Custom(s) => s,
+        }
+    }
+}
+
+impl std::fmt::Display for BetaFeature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+// ============================================================================
 // Request Types
 // ============================================================================
 
@@ -82,6 +135,13 @@ pub struct MessageCreateParams {
     /// Extended thinking configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+
+    /// Beta features to enable via the `anthropic-beta` header
+    ///
+    /// Prefer using convenience methods like `.with_1m_context()` instead of
+    /// setting this directly.
+    #[serde(skip)]
+    pub betas: Option<Vec<BetaFeature>>,
 }
 
 impl MessageCreateParams {
@@ -151,6 +211,7 @@ pub struct MessageCreateParamsBuilder {
     metadata: Option<Metadata>,
     service_tier: Option<ServiceTier>,
     thinking: Option<ThinkingConfig>,
+    betas: Option<Vec<BetaFeature>>,
 }
 
 impl MessageCreateParamsBuilder {
@@ -171,6 +232,7 @@ impl MessageCreateParamsBuilder {
             metadata: None,
             service_tier: None,
             thinking: None,
+            betas: None,
         }
     }
 
@@ -298,6 +360,51 @@ impl MessageCreateParamsBuilder {
         self
     }
 
+    /// Enable beta features
+    ///
+    /// For common beta features, prefer convenience methods like `.with_1m_context()`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mixtape_anthropic_sdk::{MessageCreateParams, BetaFeature};
+    ///
+    /// let params = MessageCreateParams::builder("claude-sonnet-4-5-20250929", 8192)
+    ///     .betas(vec![BetaFeature::Context1M])
+    ///     .user("Analyze this large document...")
+    ///     .build();
+    /// ```
+    pub fn betas(mut self, betas: Vec<BetaFeature>) -> Self {
+        self.betas = Some(betas);
+        self
+    }
+
+    /// Enable 1M token context window (beta)
+    ///
+    /// Expands the context window from 200K to 1 million tokens.
+    /// Only supported on Claude Sonnet 4 and Claude Sonnet 4.5 models.
+    ///
+    /// **Pricing**: When prompts exceed 200K tokens, input costs ~2x and
+    /// output costs ~1.5x standard rates.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mixtape_anthropic_sdk::MessageCreateParams;
+    ///
+    /// let params = MessageCreateParams::builder("claude-sonnet-4-5-20250929", 8192)
+    ///     .with_1m_context()
+    ///     .user("Analyze this large document...")
+    ///     .build();
+    /// ```
+    pub fn with_1m_context(mut self) -> Self {
+        let betas = self.betas.get_or_insert_with(Vec::new);
+        if !betas.contains(&BetaFeature::Context1M) {
+            betas.push(BetaFeature::Context1M);
+        }
+        self
+    }
+
     /// Build the MessageCreateParams
     pub fn build(self) -> MessageCreateParams {
         MessageCreateParams {
@@ -315,6 +422,7 @@ impl MessageCreateParamsBuilder {
             metadata: self.metadata,
             service_tier: self.service_tier,
             thinking: self.thinking,
+            betas: self.betas,
         }
     }
 }

@@ -3,7 +3,7 @@ use mixtape_cli::{run_cli, SqliteStore};
 ///
 /// This example demonstrates:
 /// 1. All default tools from mixtape-tools (filesystem, process, web, search, edit)
-/// 2. Claude Sonnet 4.5 via AWS Bedrock
+/// 2. Claude Sonnet 4.5 1M (extended context) via AWS Bedrock
 /// 3. Chrome DevTools MCP server integration
 /// 4. Interactive REPL with session management
 /// 5. Command history and special commands
@@ -80,9 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Provider with retry callback for visibility into rate limit handling
     // US inference profile provides cross-region failover for improved reliability
+    // 1M context window enabled via beta header for extended context support
     let provider = BedrockProvider::new(ClaudeSonnet4_5)
         .await?
         .with_inference_profile(InferenceProfile::US)
+        .with_1m_context()
         .with_retry_callback(|info| {
             eprintln!(
                 "   ⚠ Retry {}/{} in {:?} (rate limited)",

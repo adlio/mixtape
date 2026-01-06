@@ -66,7 +66,7 @@ The REPL provides:
 
 ## Tool Permissions
 
-For agents that need user confirmation before running tools, use the permission system:
+For agents that need user confirmation before running tools, use `.interactive()` with a grant store:
 
 ```rust
 use mixtape_core::{Agent, ClaudeSonnet4_5, MemoryGrantStore};
@@ -80,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let agent = Agent::builder()
         .bedrock(ClaudeSonnet4_5)
+        .interactive()  // Enable permission prompting
         .with_grant_store(store)
         .build()
         .await?;
@@ -89,29 +90,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Tools without a matching grant will emit `PermissionRequired` events. The REPL handles these
-by prompting the user interactively.
+The `.interactive()` builder method configures the agent to emit `PermissionRequired` events for tools without a matching grant. The `run_cli()` function automatically handles these events by prompting the user for approval.
 
 ## Approval Prompters
 
 The CLI provides pluggable approval UX via the `ApprovalPrompter` trait:
 
 ```rust
-use mixtape_cli::{ApprovalPrompter, PermissionRequest, SimplePrompter};
-use mixtape_core::AuthorizationResponse;
+use mixtape_cli::{prompt_for_approval, PermissionRequest};
 
-// Use the default prompter
-let prompter = SimplePrompter;
-let choice: AuthorizationResponse = prompter.prompt(&request);
+let request = PermissionRequest {
+    tool_name: "write_file".to_string(),
+    tool_use_id: "toolu_123".to_string(),
+    params_hash: "abc123".to_string(),
+    formatted_display: None,
+};
+
+let choice = prompt_for_approval(&request);
 ```
 
-The `SimplePrompter` offers four options:
+The default prompter offers four options:
 - `y` - approve once (don't remember)
 - `e` - trust this exact call (session)
 - `t` - trust entire tool (session)
 - `n` - deny
 
 Implement `ApprovalPrompter` for custom approval UX (e.g., GUI dialogs, web interfaces).
+
+## Custom Event Presentation
+
+For building custom UIs that handle tool output and permissions, use the event queue pattern:
+
+```rust
+use mixtape_cli::{new_event_queue, EventPresenter, PresentationHook, Verbosity};
+use std::sync::{Arc, Mutex};
+
+// Create shared event queue
+let event_queue = new_event_queue();
+
+// Add presentation hook to agent
+agent.add_hook(PresentationHook::new(Arc::clone(&event_queue)));
+
+// Create presenter to render events
+let verbosity = Arc::new(Mutex::new(Verbosity::Normal));
+let presenter = EventPresenter::new(
+    Arc::clone(&agent),
+    verbosity,
+    Arc::clone(&event_queue),
+);
+
+// Call presenter.flush() periodically to render queued events
+```
+
+See the `permissions` example for a complete implementation.
 
 ## Exports
 
@@ -124,6 +155,8 @@ Implement `ApprovalPrompter` for custom approval UX (e.g., GUI dialogs, web inte
 | `DefaultPrompter` | Type alias for `SimplePrompter` |
 | `PermissionRequest` | Permission request data for prompters |
 | `prompt_for_approval` | Convenience function using default prompter |
-| `PresentationHook` | Rich tool output formatting hook |
-| `Verbosity` | Output verbosity level |
+| `PresentationHook` | Hook that queues tool events for presentation |
+| `EventPresenter` | Renders queued events with formatting |
+| `new_event_queue` | Create event queue for PresentationHook |
+| `Verbosity` | Output verbosity level (Quiet, Normal, Verbose) |
 | `CliError` | Error type for CLI operations |

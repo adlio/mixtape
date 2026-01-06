@@ -3,15 +3,15 @@ members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cl
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/adlio/mixtape"
 
 [workspace.dependencies]
 # Internal crates
-mixtape-core = { version = "0.1.1", path = "./mixtape-core" }
-mixtape-anthropic-sdk = { version = "0.1.1", path = "./mixtape-anthropic-sdk" }
+mixtape-core = { version = "0.2.0", path = "./mixtape-core" }
+mixtape-anthropic-sdk = { version = "0.2.0", path = "./mixtape-anthropic-sdk" }
 mixtape-tools = { path = "./mixtape-tools" }
 mixtape-cli = { path = "./mixtape-cli" }
 

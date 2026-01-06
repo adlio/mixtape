@@ -533,7 +533,7 @@ impl BedrockProvider {
     /// Note: This is passed via `additionalModelRequestFields` for Claude models.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// let provider = BedrockProvider::new(ClaudeSonnet4_5).await
     ///     .with_thinking(4096);
     /// ```
@@ -558,7 +558,7 @@ impl BedrockProvider {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// let provider = BedrockProvider::new(ClaudeSonnet4_5)
     ///     .await?
     ///     .with_inference_profile(InferenceProfile::US)

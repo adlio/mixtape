@@ -13,8 +13,8 @@ use conversion::{
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use mixtape_anthropic_sdk::{
-    Anthropic, AnthropicError, ContentBlock as AnthropicContentBlock, ContentBlockDelta,
-    MessageCreateParams, MessageStreamEvent, Tool as AnthropicTool,
+    Anthropic, AnthropicError, BetaFeature, ContentBlock as AnthropicContentBlock,
+    ContentBlockDelta, MessageCreateParams, MessageStreamEvent, Tool as AnthropicTool,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,6 +66,7 @@ pub struct AnthropicProvider {
     top_p: Option<f32>,
     top_k: Option<u32>,
     thinking_config: Option<ThinkingConfig>,
+    betas: Option<Vec<BetaFeature>>,
     retry_config: RetryConfig,
     on_retry: Option<RetryCallback>,
 }
@@ -83,6 +84,7 @@ impl Clone for AnthropicProvider {
             top_p: self.top_p,
             top_k: self.top_k,
             thinking_config: self.thinking_config,
+            betas: self.betas.clone(),
             retry_config: self.retry_config.clone(),
             on_retry: self.on_retry.clone(),
         }
@@ -136,6 +138,7 @@ impl AnthropicProvider {
             top_p: None,
             top_k: None,
             thinking_config: None,
+            betas: None,
             retry_config: RetryConfig::default(),
             on_retry: None,
         }
@@ -178,6 +181,38 @@ impl AnthropicProvider {
     /// ```
     pub fn with_thinking(mut self, budget_tokens: u32) -> Self {
         self.thinking_config = Some(ThinkingConfig::Enabled { budget_tokens });
+        self
+    }
+
+    /// Enable 1M token context window for Claude Sonnet 4/4.5 (beta)
+    ///
+    /// Expands the context window from 200K to 1 million tokens.
+    ///
+    /// # Supported models
+    ///
+    /// - `ClaudeSonnet4` (`claude-sonnet-4-20250514`)
+    /// - `ClaudeSonnet4_5` (`claude-sonnet-4-5-20250929`)
+    ///
+    /// # Pricing
+    ///
+    /// When prompts exceed 200K tokens:
+    /// - Input tokens: ~2x standard pricing
+    /// - Output tokens: ~1.5x standard pricing
+    ///
+    /// Prompts under 200K tokens are billed at standard rates.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let provider = AnthropicProvider::from_env(ClaudeSonnet4_5)?
+    ///     .with_1m_context();
+    /// ```
+    pub fn with_1m_context(mut self) -> Self {
+        let betas = self.betas.get_or_insert_with(Vec::new);
+        if !betas.contains(&BetaFeature::Context1M) {
+            betas.push(BetaFeature::Context1M);
+        }
+        self.max_context_tokens = 1_000_000;
         self
     }
 
@@ -263,6 +298,9 @@ impl AnthropicProvider {
                 ThinkingConfig::Disabled => mixtape_anthropic_sdk::ThinkingConfig::disabled(),
             };
             builder = builder.thinking_config(sdk_config);
+        }
+        if let Some(betas) = &self.betas {
+            builder = builder.betas(betas.clone());
         }
 
         builder.build()

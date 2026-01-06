@@ -184,10 +184,10 @@ pub use streaming::{
 
 // Messages - request types
 pub use messages::{
-    CacheControl, CacheTtl, CitationsConfig, ContentBlockParam, DocumentSource, ImageSource,
-    MessageContent, MessageCreateParams, MessageCreateParamsBuilder, MessageParam, Metadata, Role,
-    ServiceTier, ThinkingConfig, ToolResultContent, ToolResultContentBlock, WebSearchErrorCode,
-    WebSearchResult, WebSearchToolResultContent, WebSearchToolResultError,
+    BetaFeature, CacheControl, CacheTtl, CitationsConfig, ContentBlockParam, DocumentSource,
+    ImageSource, MessageContent, MessageCreateParams, MessageCreateParamsBuilder, MessageParam,
+    Metadata, Role, ServiceTier, ThinkingConfig, ToolResultContent, ToolResultContentBlock,
+    WebSearchErrorCode, WebSearchResult, WebSearchToolResultContent, WebSearchToolResultError,
 };
 
 // Messages - response types

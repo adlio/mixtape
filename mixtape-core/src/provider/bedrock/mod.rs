@@ -533,12 +533,61 @@ impl BedrockProvider {
     /// Note: This is passed via `additionalModelRequestFields` for Claude models.
     ///
     /// # Example
-    /// ```ignore
+    /// ```no_run
     /// let provider = BedrockProvider::new(ClaudeSonnet4_5).await
     ///     .with_thinking(4096);
     /// ```
     pub fn with_thinking(mut self, budget_tokens: u32) -> Self {
         self.thinking_config = Some(ThinkingConfig::Enabled { budget_tokens });
+        self
+    }
+
+    /// Enable 1M token context window for Claude Sonnet 4/4.5 (relies on Anthropic beta feature)
+    ///
+    /// Expands the context window from 200K to 1 million tokens.
+    ///
+    /// # Supported models
+    ///
+    /// - `ClaudeSonnet4` (`anthropic.claude-sonnet-4-20250514-v1:0`)
+    /// - `ClaudeSonnet4_5` (`anthropic.claude-sonnet-4-5-20250929-v1:0`)
+    ///
+    /// # Regional availability
+    ///
+    /// Available in US West (Oregon), US East (N. Virginia), and US East (Ohio).
+    /// Requires cross-region inference profile (`InferenceProfile::US` or `InferenceProfile::Global`).
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let provider = BedrockProvider::new(ClaudeSonnet4_5)
+    ///     .await?
+    ///     .with_inference_profile(InferenceProfile::US)
+    ///     .with_1m_context();
+    /// ```
+    pub fn with_1m_context(mut self) -> Self {
+        const BETA_KEY: &str = "anthropic_beta";
+        const CONTEXT_1M: &str = "context-1m-2025-08-07";
+
+        // Check if already enabled (idempotent)
+        if let Some(existing) = self.additional_fields.get(BETA_KEY) {
+            if let Some(arr) = existing.as_array() {
+                if arr.iter().any(|v| v.as_str() == Some(CONTEXT_1M)) {
+                    return self;
+                }
+            }
+        }
+
+        // Add the beta feature
+        let betas = self
+            .additional_fields
+            .entry(BETA_KEY.to_string())
+            .or_insert_with(|| serde_json::json!([]));
+
+        if let Some(arr) = betas.as_array_mut() {
+            arr.push(serde_json::json!(CONTEXT_1M));
+        }
+
+        self.max_context_tokens = 1_000_000;
         self
     }
 

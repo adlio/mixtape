@@ -432,7 +432,11 @@ impl<'a> Messages<'a> {
         params: MessageCreateParams,
     ) -> Result<Response<Message>, AnthropicError> {
         let url = format!("{}/v1/messages", self.client.api_base);
-        let headers = self.build_headers()?;
+        let beta_strings: Option<Vec<String>> = params
+            .betas
+            .as_ref()
+            .map(|b| b.iter().map(|f| f.to_string()).collect());
+        let headers = self.build_headers(beta_strings.as_deref())?;
 
         self.client
             .execute_with_retry(&url, Some(&params), reqwest::Method::POST, headers)
@@ -462,8 +466,13 @@ impl<'a> Messages<'a> {
         params.stream = Some(true);
 
         let url = format!("{}/v1/messages", self.client.api_base);
+        let beta_strings: Option<Vec<String>> = params
+            .betas
+            .as_ref()
+            .map(|b| b.iter().map(|f| f.to_string()).collect());
+        let headers = self.build_headers(beta_strings.as_deref())?;
 
-        MessageStream::new(&self.client.client, &url, self.build_headers()?, params).await
+        MessageStream::new(&self.client.client, &url, headers, params).await
     }
 
     /// Count tokens for a message
@@ -488,15 +497,15 @@ impl<'a> Messages<'a> {
         params: CountTokensParams,
     ) -> Result<Response<CountTokensResponse>, AnthropicError> {
         let url = format!("{}/v1/messages/count_tokens", self.client.api_base);
-        let headers = self.build_headers()?;
+        let headers = self.build_headers(None)?;
 
         self.client
             .execute_with_retry(&url, Some(&params), reqwest::Method::POST, headers)
             .await
     }
 
-    fn build_headers(&self) -> Result<HeaderMap, AnthropicError> {
-        build_headers(&self.client.api_key, &self.client.api_version)
+    fn build_headers(&self, betas: Option<&[String]>) -> Result<HeaderMap, AnthropicError> {
+        build_headers(&self.client.api_key, &self.client.api_version, betas)
     }
 }
 
@@ -732,7 +741,7 @@ impl<'a> Batches<'a> {
     }
 
     fn build_headers(&self) -> Result<HeaderMap, AnthropicError> {
-        build_headers(&self.client.api_key, &self.client.api_version)
+        build_headers(&self.client.api_key, &self.client.api_version, None)
     }
 }
 
@@ -740,7 +749,11 @@ impl<'a> Batches<'a> {
 // Shared Helpers
 // ============================================================================
 
-fn build_headers(api_key: &str, api_version: &str) -> Result<HeaderMap, AnthropicError> {
+fn build_headers(
+    api_key: &str,
+    api_version: &str,
+    betas: Option<&[String]>,
+) -> Result<HeaderMap, AnthropicError> {
     let mut headers = HeaderMap::new();
 
     headers.insert(
@@ -756,6 +769,19 @@ fn build_headers(api_key: &str, api_version: &str) -> Result<HeaderMap, Anthropi
     );
 
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    // Add beta features header if any betas are specified
+    if let Some(betas) = betas {
+        if !betas.is_empty() {
+            let beta_value = betas.join(",");
+            headers.insert(
+                "anthropic-beta",
+                HeaderValue::from_str(&beta_value).map_err(|e| {
+                    AnthropicError::Configuration(format!("Invalid beta value: {}", e))
+                })?,
+            );
+        }
+    }
 
     Ok(headers)
 }
@@ -1282,6 +1308,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await
             .unwrap();
@@ -1332,6 +1359,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await
             .unwrap();
@@ -1386,6 +1414,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1434,6 +1463,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1495,6 +1525,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1554,6 +1585,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1607,6 +1639,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1660,6 +1693,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1756,6 +1790,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1815,6 +1850,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1860,6 +1896,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1912,6 +1949,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 
@@ -1962,6 +2000,7 @@ mod wiremock_tests {
                 metadata: None,
                 service_tier: None,
                 thinking: None,
+                betas: None,
             })
             .await;
 

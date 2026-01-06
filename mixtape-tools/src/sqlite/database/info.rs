@@ -50,7 +50,7 @@ impl Tool for DatabaseInfoTool {
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
                     [],
-                    |row| row.get(0),
+                    |row| row.get::<_, i64>(0).map(|v| v as usize),
                 )
                 .unwrap_or(0);
 
@@ -59,7 +59,7 @@ impl Tool for DatabaseInfoTool {
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index'",
                     [],
-                    |row| row.get(0),
+                    |row| row.get::<_, i64>(0).map(|v| v as usize),
                 )
                 .unwrap_or(0);
 
@@ -68,7 +68,7 @@ impl Tool for DatabaseInfoTool {
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'view'",
                     [],
-                    |row| row.get(0),
+                    |row| row.get::<_, i64>(0).map(|v| v as usize),
                 )
                 .unwrap_or(0);
 
@@ -77,7 +77,7 @@ impl Tool for DatabaseInfoTool {
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger'",
                     [],
-                    |row| row.get(0),
+                    |row| row.get::<_, i64>(0).map(|v| v as usize),
                 )
                 .unwrap_or(0);
 

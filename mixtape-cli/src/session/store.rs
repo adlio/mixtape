@@ -232,7 +232,7 @@ impl SessionStore for SqliteStore {
                  VALUES (?, ?, ?, ?, ?, ?, ?)",
                 params![
                     session.id,
-                    idx,
+                    idx as i64,
                     format!("{:?}", msg.role),
                     msg.content,
                     tool_calls_json,
@@ -270,7 +270,7 @@ impl SessionStore for SqliteStore {
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, i64>(3)?,
-                    row.get::<_, usize>(4)?,
+                    row.get::<_, i64>(4)? as usize,
                 ))
             })
             .map_err(|e| SessionError::Storage(e.to_string()))?

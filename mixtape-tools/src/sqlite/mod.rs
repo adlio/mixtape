@@ -85,6 +85,57 @@
 //!     .await?;
 //! ```
 //!
+//! # Fine-Grained Permissions
+//!
+//! For tighter control, use configured tools that restrict access to specific
+//! databases and tables. These tools validate SQL queries before execution and
+//! enforce table-level read/write permissions.
+//!
+//! ## Lock Tools to a Specific Database
+//!
+//! ```rust,ignore
+//! use mixtape_tools::sqlite;
+//!
+//! // Tools will only access this database, ignoring any db_path in input
+//! let agent = Agent::builder()
+//!     .add_tools(sqlite::tools_for_database("/data/app.db"))
+//!     .build()
+//!     .await?;
+//! ```
+//!
+//! ## Read-Only Access to Specific Tables
+//!
+//! ```rust,ignore
+//! use mixtape_tools::sqlite;
+//!
+//! // Can only SELECT from these tables, all writes blocked
+//! let agent = Agent::builder()
+//!     .add_tools(sqlite::read_only_tools_for_tables(
+//!         "/data/app.db",
+//!         ["users", "products", "orders"]
+//!     ))
+//!     .build()
+//!     .await?;
+//! ```
+//!
+//! ## Custom Table Permissions
+//!
+//! ```rust,ignore
+//! use mixtape_tools::sqlite::{SqliteConfig, tools_with_config};
+//!
+//! let config = SqliteConfig::builder()
+//!     .db_path("/data/app.db")
+//!     .allow_read(["users", "products", "orders", "analytics"])
+//!     .allow_write(["analytics"])  // Can only write to analytics
+//!     .deny_read(["secrets"])      // Block access to secrets table
+//!     .build()?;
+//!
+//! let agent = Agent::builder()
+//!     .add_tools(tools_with_config(config))
+//!     .build()
+//!     .await?;
+//! ```
+//!
 //! # Tool Categories
 //!
 //! ## Database Management (Safe)
@@ -122,12 +173,15 @@
 //! - `sqlite_export_migrations` - Export migrations for transfer (Safe)
 //! - `sqlite_import_migrations` - Import migrations as pending (Destructive)
 
+pub mod config;
+pub mod configured;
 pub mod database;
 pub mod error;
 pub mod maintenance;
 pub mod manager;
 pub mod migration;
 pub mod query;
+mod sql_parser;
 pub mod table;
 #[cfg(test)]
 pub mod test_utils;
@@ -135,6 +189,13 @@ pub mod transaction;
 pub mod types;
 
 // Re-export commonly used items
+pub use config::{
+    ConfigError, SqliteConfig, SqliteConfigBuilder, TablePermissionMode, TablePermissions,
+};
+pub use configured::{
+    ConfiguredBulkInsertTool, ConfiguredReadQueryTool, ConfiguredSchemaQueryTool,
+    ConfiguredWriteQueryTool,
+};
 pub use database::{CloseDatabaseTool, DatabaseInfoTool, ListDatabasesTool, OpenDatabaseTool};
 pub use error::SqliteToolError;
 pub use maintenance::{BackupDatabaseTool, ExportSchemaTool, VacuumDatabaseTool};
@@ -209,6 +270,118 @@ pub fn all_tools() -> Vec<Box<dyn DynTool>> {
     tools.extend(transaction_tools());
     tools.extend(migration_tools());
     tools
+}
+
+// =============================================================================
+// Configured tool factory functions
+// =============================================================================
+
+use std::sync::Arc;
+
+/// Create a set of SQLite tools restricted to a specific database.
+///
+/// The returned tools will only access the specified database, ignoring
+/// any `db_path` parameter in tool inputs.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use mixtape_tools::sqlite;
+///
+/// let agent = Agent::builder()
+///     .add_tools(sqlite::tools_for_database("/data/app.db"))
+///     .build()
+///     .await?;
+/// ```
+pub fn tools_for_database(db_path: impl Into<String>) -> Vec<Box<dyn DynTool>> {
+    let config = Arc::new(
+        SqliteConfig::builder()
+            .db_path(db_path)
+            .build()
+            .expect("tools_for_database: config build should never fail"),
+    );
+
+    vec![
+        box_tool(ConfiguredReadQueryTool::with_shared_config(config.clone())),
+        box_tool(ConfiguredWriteQueryTool::with_shared_config(config.clone())),
+        box_tool(ConfiguredSchemaQueryTool::with_shared_config(
+            config.clone(),
+        )),
+        box_tool(ConfiguredBulkInsertTool::with_shared_config(config)),
+    ]
+}
+
+/// Create read-only tools for specific tables in a specific database.
+///
+/// The returned tools can only read from the specified tables.
+/// All write operations will be denied.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use mixtape_tools::sqlite;
+///
+/// let agent = Agent::builder()
+///     .add_tools(sqlite::read_only_tools_for_tables(
+///         "/data/app.db",
+///         ["users", "products", "orders"]
+///     ))
+///     .build()
+///     .await?;
+/// ```
+pub fn read_only_tools_for_tables<I, S>(
+    db_path: impl Into<String>,
+    tables: I,
+) -> Vec<Box<dyn DynTool>>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let config = Arc::new(
+        SqliteConfig::builder()
+            .db_path(db_path)
+            .allow_read(tables)
+            .read_only()
+            .build()
+            .expect("read_only_tools_for_tables: config build should never fail"),
+    );
+
+    vec![box_tool(ConfiguredReadQueryTool::with_shared_config(
+        config,
+    ))]
+}
+
+/// Create tools with custom configuration.
+///
+/// This provides full control over database path and table permissions.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use mixtape_tools::sqlite::{SqliteConfig, tools_with_config};
+///
+/// let config = SqliteConfig::builder()
+///     .db_path("/data/app.db")
+///     .allow_read(["users", "products", "orders", "analytics"])
+///     .allow_write(["analytics"])
+///     .build();
+///
+/// let agent = Agent::builder()
+///     .add_tools(tools_with_config(config))
+///     .build()
+///     .await?;
+/// ```
+pub fn tools_with_config(config: SqliteConfig) -> Vec<Box<dyn DynTool>> {
+    let config = Arc::new(config);
+
+    vec![
+        box_tool(ConfiguredReadQueryTool::with_shared_config(config.clone())),
+        box_tool(ConfiguredWriteQueryTool::with_shared_config(config.clone())),
+        box_tool(ConfiguredSchemaQueryTool::with_shared_config(
+            config.clone(),
+        )),
+        box_tool(ConfiguredBulkInsertTool::with_shared_config(config)),
+    ]
 }
 
 #[cfg(test)]
@@ -320,5 +493,39 @@ mod tests {
             unique_names.len(),
             "Duplicate tool names found"
         );
+    }
+
+    #[test]
+    fn test_tools_for_database() {
+        let tools = tools_for_database("/test/path.db");
+        assert_eq!(tools.len(), 4);
+
+        let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
+        assert!(names.contains(&"sqlite_read_query"));
+        assert!(names.contains(&"sqlite_write_query"));
+        assert!(names.contains(&"sqlite_schema_query"));
+        assert!(names.contains(&"sqlite_bulk_insert"));
+    }
+
+    #[test]
+    fn test_read_only_tools_for_tables() {
+        let tools = read_only_tools_for_tables("/test/path.db", ["users", "orders"]);
+        assert_eq!(tools.len(), 1);
+
+        let names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
+        assert!(names.contains(&"sqlite_read_query"));
+    }
+
+    #[test]
+    fn test_tools_with_config() {
+        let config = SqliteConfig::builder()
+            .db_path("/test/path.db")
+            .allow_read(["users"])
+            .allow_write(["orders"])
+            .build()
+            .unwrap();
+
+        let tools = tools_with_config(config);
+        assert_eq!(tools.len(), 4);
     }
 }

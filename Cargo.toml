@@ -51,6 +51,7 @@ aws-smithy-runtime-api = { version = "1.7", features = ["client", "http-1x"] }
 
 # Database
 rusqlite = { version = "0", features = ["bundled"] }
+sqlparser = "0"
 
 # Utilities
 base64 = "0.22"

@@ -35,6 +35,10 @@ pub enum SqliteToolError {
     #[error("Transaction error: {0}")]
     TransactionError(String),
 
+    /// Permission denied for table operation
+    #[error("Permission denied: cannot {operation} table '{table}'")]
+    PermissionDenied { operation: String, table: String },
+
     /// Path validation or filesystem error
     #[error("Path error: {0}")]
     PathError(String),
@@ -129,6 +133,18 @@ mod tests {
     fn test_transaction_error_display() {
         let err = SqliteToolError::TransactionError("no active transaction".to_string());
         assert_eq!(err.to_string(), "Transaction error: no active transaction");
+    }
+
+    #[test]
+    fn test_permission_denied_display() {
+        let err = SqliteToolError::PermissionDenied {
+            operation: "write".to_string(),
+            table: "secrets".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Permission denied: cannot write table 'secrets'"
+        );
     }
 
     #[test]

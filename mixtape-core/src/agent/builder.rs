@@ -17,6 +17,7 @@ use crate::conversation::{BoxedConversationManager, SlidingWindowConversationMan
 use crate::permission::{GrantStore, ToolAuthorizationPolicy, ToolCallAuthorizer};
 use crate::provider::ModelProvider;
 use crate::tool::{box_tool, DynTool, Tool};
+use crate::types::ToolSearchType;
 
 use super::context::{ContextConfig, ContextSource};
 use super::types::{DEFAULT_MAX_CONCURRENT_TOOLS, DEFAULT_PERMISSION_TIMEOUT};
@@ -70,6 +71,10 @@ type ProviderFactory = Box<
 pub struct AgentBuilder {
     provider_factory: Option<ProviderFactory>,
     tools: Vec<Box<dyn DynTool>>,
+    /// Tools that are deferred for discovery via tool search
+    deferred_tools: Vec<Box<dyn DynTool>>,
+    /// Tool search algorithm type (defaults to Regex when deferred tools are present)
+    tool_search_type: Option<ToolSearchType>,
     system_prompt: Option<String>,
     max_concurrent_tools: usize,
     /// Custom grant store (if None, uses MemoryGrantStore)
@@ -107,6 +112,8 @@ impl AgentBuilder {
         Self {
             provider_factory: None,
             tools: Vec::new(),
+            deferred_tools: Vec::new(),
+            tool_search_type: None,
             system_prompt: None,
             max_concurrent_tools: DEFAULT_MAX_CONCURRENT_TOOLS,
             grant_store: None,
@@ -311,6 +318,81 @@ impl AgentBuilder {
             self.tools.push(tool);
             self.trusted_tools.push(tool_name);
         }
+        self
+    }
+
+    /// Add a deferred tool to the agent
+    ///
+    /// Deferred tools are not loaded into context initially. Instead, Claude
+    /// discovers them via tool search when needed. This is useful when you
+    /// have 30+ tools and want to save context tokens.
+    ///
+    /// Adding any deferred tool automatically enables tool search with regex
+    /// (the more precise algorithm). Use `with_tool_search_type()` to override.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let agent = Agent::builder()
+    ///     .bedrock(ClaudeSonnet4_5)
+    ///     .add_tool(WeatherTool)           // Always loaded (frequently used)
+    ///     .add_deferred_tool(EmailTool)    // Deferred - discovered via search
+    ///     .add_deferred_tool(CalendarTool) // Deferred
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn add_deferred_tool(mut self, tool: impl Tool + 'static) -> Self {
+        self.deferred_tools.push(box_tool(tool));
+        self
+    }
+
+    /// Add multiple deferred tools to the agent
+    ///
+    /// Deferred tools are not loaded into context initially. Instead, Claude
+    /// discovers them via tool search when needed.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mixtape_tools::email;
+    ///
+    /// // Add email tools as deferred (rarely used)
+    /// let agent = Agent::builder()
+    ///     .bedrock(ClaudeSonnet4_5)
+    ///     .add_tool(Calculator)            // Always loaded
+    ///     .add_deferred_tools(email::all_tools())
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn add_deferred_tools(mut self, tools: impl IntoIterator<Item = Box<dyn DynTool>>) -> Self {
+        self.deferred_tools.extend(tools);
+        self
+    }
+
+    /// Set the tool search algorithm type
+    ///
+    /// Only relevant when deferred tools are present. Defaults to `Regex`
+    /// when deferred tools are added.
+    ///
+    /// # Options
+    ///
+    /// - `ToolSearchType::Regex` (default): Claude uses regex patterns - more precise
+    /// - `ToolSearchType::Bm25`: Claude uses natural language - better for semantic matching
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mixtape_core::ToolSearchType;
+    ///
+    /// let agent = Agent::builder()
+    ///     .bedrock(ClaudeSonnet4_5)
+    ///     .add_deferred_tool(EmailTool)
+    ///     .with_tool_search_type(ToolSearchType::Bm25)  // Use semantic search
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn with_tool_search_type(mut self, search_type: ToolSearchType) -> Self {
+        self.tool_search_type = Some(search_type);
         self
     }
 
@@ -527,7 +609,7 @@ impl AgentBuilder {
     ///     .build()
     ///     .await?;
     /// ```
-    pub async fn build(self) -> crate::error::Result<Agent> {
+    pub async fn build(mut self) -> crate::error::Result<Agent> {
         let provider_factory = self
             .provider_factory
             .ok_or_else(|| crate::error::Error::Config(
@@ -553,12 +635,28 @@ impl AgentBuilder {
             authorizer.grant_tool(tool_name).await?;
         }
 
+        // Collect deferred tool names and merge with regular tools
+        let mut deferred_tool_names = std::collections::HashSet::new();
+        for tool in &self.deferred_tools {
+            deferred_tool_names.insert(tool.name().to_string());
+        }
+        self.tools.extend(self.deferred_tools);
+
+        // Set tool search type if deferred tools are present
+        let tool_search_type = if !deferred_tool_names.is_empty() {
+            Some(self.tool_search_type.unwrap_or_default())
+        } else {
+            self.tool_search_type
+        };
+
         #[allow(unused_mut)]
         let mut agent = Agent {
             provider,
             system_prompt: self.system_prompt,
             max_concurrent_tools: self.max_concurrent_tools,
             tools: self.tools,
+            deferred_tool_names,
+            tool_search_type,
             hooks: Arc::new(parking_lot::RwLock::new(Vec::new())),
             authorizer: Arc::new(RwLock::new(authorizer)),
             authorization_timeout: self.authorization_timeout,

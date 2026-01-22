@@ -23,7 +23,9 @@
 //! ```
 
 use crate::error::{AnthropicError, ApiError};
-use crate::messages::{ContentBlock, Message, MessageCreateParams, StopReason, Usage};
+use crate::messages::{
+    ContentBlock, Message, MessageCreateParams, StopReason, ToolSearchResultContent, Usage,
+};
 use futures::stream::Stream;
 use futures::StreamExt;
 use reqwest::header::HeaderMap;
@@ -361,6 +363,7 @@ pub(crate) struct ContentBlockBuilder {
     tool_input_json: String,
     thinking: String,
     thinking_signature: String,
+    tool_search_content: Option<ToolSearchResultContent>,
 }
 
 #[derive(Debug, Clone)]
@@ -371,6 +374,7 @@ pub(crate) enum ContentBlockType {
     RedactedThinking,
     ServerToolUse,
     WebSearchToolResult,
+    ToolSearchToolResult,
 }
 
 impl ContentBlockBuilder {
@@ -383,6 +387,7 @@ impl ContentBlockBuilder {
             tool_input_json: String::new(),
             thinking: String::new(),
             thinking_signature: String::new(),
+            tool_search_content: None,
         }
     }
 
@@ -430,6 +435,14 @@ impl ContentBlockBuilder {
                 self.block_type = Some(ContentBlockType::WebSearchToolResult);
                 self.tool_id = tool_use_id;
                 self.tool_input_json = serde_json::to_string(&content).unwrap_or_default();
+            }
+            ContentBlock::ToolSearchToolResult {
+                tool_use_id,
+                content,
+            } => {
+                self.block_type = Some(ContentBlockType::ToolSearchToolResult);
+                self.tool_id = tool_use_id;
+                self.tool_search_content = Some(content);
             }
         }
     }
@@ -483,6 +496,13 @@ impl ContentBlockBuilder {
                 let content = serde_json::from_str(&self.tool_input_json)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 Some(ContentBlock::WebSearchToolResult {
+                    tool_use_id: self.tool_id,
+                    content,
+                })
+            }
+            ContentBlockType::ToolSearchToolResult => {
+                let content = self.tool_search_content?;
+                Some(ContentBlock::ToolSearchToolResult {
                     tool_use_id: self.tool_id,
                     content,
                 })

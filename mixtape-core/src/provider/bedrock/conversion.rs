@@ -96,6 +96,25 @@ fn to_bedrock_content_block(block: &ContentBlock) -> Result<BedrockContentBlock,
                 thinking
             )))
         }
+        ContentBlock::ServerToolUse(server_use) => {
+            // Server-side tool use blocks are informational - represent as text
+            Ok(BedrockContentBlock::Text(format!(
+                "[Server tool: {} ({})]",
+                server_use.name, server_use.id
+            )))
+        }
+        ContentBlock::ToolSearchResult(result) => {
+            // Tool search results are informational - represent as text
+            let refs: Vec<&str> = result
+                .tool_references
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect();
+            Ok(BedrockContentBlock::Text(format!(
+                "[Tool search result: found tools: {}]",
+                refs.join(", ")
+            )))
+        }
     }
 }
 
@@ -579,6 +598,7 @@ mod tests {
                 },
                 "required": ["query"]
             }),
+            defer_loading: false,
         };
 
         let bedrock_tool = to_bedrock_tool(&tool_def).unwrap();

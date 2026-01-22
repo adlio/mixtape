@@ -54,6 +54,12 @@ pub enum BetaFeature {
     /// **Pricing**: ~2x input, ~1.5x output when prompts exceed 200K tokens.
     Context1M,
 
+    /// Advanced tool use features including tool search
+    ///
+    /// Enables tool search for discovering tools from a large catalog dynamically.
+    /// Use `.with_advanced_tool_use()` to enable this feature.
+    AdvancedToolUse,
+
     /// A custom beta feature identifier for forward compatibility
     ///
     /// Use this for beta features not yet added to this enum.
@@ -65,6 +71,7 @@ impl BetaFeature {
     pub fn as_str(&self) -> &str {
         match self {
             BetaFeature::Context1M => "context-1m-2025-08-07",
+            BetaFeature::AdvancedToolUse => "advanced-tool-use-2025-11-20",
             BetaFeature::Custom(s) => s,
         }
     }
@@ -401,6 +408,29 @@ impl MessageCreateParamsBuilder {
         let betas = self.betas.get_or_insert_with(Vec::new);
         if !betas.contains(&BetaFeature::Context1M) {
             betas.push(BetaFeature::Context1M);
+        }
+        self
+    }
+
+    /// Enable advanced tool use features (beta)
+    ///
+    /// Enables tool search for dynamically discovering tools from a large catalog.
+    /// Required when using deferred tools or tool search functionality.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mixtape_anthropic_sdk::MessageCreateParams;
+    ///
+    /// let params = MessageCreateParams::builder("claude-sonnet-4-20250514", 4096)
+    ///     .with_advanced_tool_use()
+    ///     .user("Send an email to Bob")
+    ///     .build();
+    /// ```
+    pub fn with_advanced_tool_use(mut self) -> Self {
+        let betas = self.betas.get_or_insert_with(Vec::new);
+        if !betas.contains(&BetaFeature::AdvancedToolUse) {
+            betas.push(BetaFeature::AdvancedToolUse);
         }
         self
     }
@@ -760,6 +790,55 @@ pub enum WebSearchErrorCode {
     QueryTooLong,
 }
 
+/// Tool search result content
+///
+/// Contains either a list of tool references or an error.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolSearchResultContent {
+    /// Successful tool search with discovered tool references
+    ToolReferences { tool_references: Vec<ToolReference> },
+    /// Error from tool search
+    Error { error_code: ToolSearchErrorCode },
+}
+
+/// A reference to a discovered tool from tool search
+///
+/// The API automatically expands tool references into full definitions
+/// so your code doesn't need to handle this.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolReference {
+    /// Type indicator (always "tool_reference")
+    #[serde(rename = "type")]
+    pub ref_type: String,
+    /// Name of the discovered tool
+    pub name: String,
+}
+
+impl ToolReference {
+    /// Create a new tool reference
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            ref_type: "tool_reference".to_string(),
+            name: name.into(),
+        }
+    }
+}
+
+/// Tool search error codes
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolSearchErrorCode {
+    /// Invalid search query provided
+    InvalidToolInput,
+    /// Tool search service unavailable
+    Unavailable,
+    /// Maximum tool search uses exceeded
+    MaxUsesExceeded,
+    /// Too many requests to tool search
+    TooManyRequests,
+}
+
 /// Citations configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CitationsConfig {
@@ -820,7 +899,7 @@ pub enum ContentBlock {
     /// Redacted thinking block
     RedactedThinking { data: String },
 
-    /// Server tool use (server-side tools like web search)
+    /// Server tool use (server-side tools like web search or tool search)
     ServerToolUse {
         id: String,
         name: String,
@@ -831,6 +910,15 @@ pub enum ContentBlock {
     WebSearchToolResult {
         tool_use_id: String,
         content: Value, // Can be results array or error
+    },
+
+    /// Tool search tool result
+    ///
+    /// Contains references to discovered tools that match the search query.
+    /// The API automatically expands these references into full tool definitions.
+    ToolSearchToolResult {
+        tool_use_id: String,
+        content: ToolSearchResultContent,
     },
 }
 
@@ -873,6 +961,24 @@ pub struct Usage {
     /// Tokens read from cache
     #[serde(default)]
     pub cache_read_input_tokens: u32,
+
+    /// Server-side tool usage statistics
+    #[serde(default)]
+    pub server_tool_use: Option<ServerToolUseUsage>,
+}
+
+/// Server-side tool usage statistics
+///
+/// Tracks usage of server-side tools like web search and tool search.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ServerToolUseUsage {
+    /// Number of web search requests made
+    #[serde(default)]
+    pub web_search_requests: u32,
+
+    /// Number of tool search requests made
+    #[serde(default)]
+    pub tool_search_requests: u32,
 }
 
 // ============================================================================

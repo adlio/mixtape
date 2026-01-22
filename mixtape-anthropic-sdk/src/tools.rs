@@ -1,7 +1,7 @@
 //! Tool definitions for the Anthropic Messages API
 //!
 //! This module contains types for defining tools that Claude can use,
-//! including tool schemas and tool choice configuration.
+//! including tool schemas, tool choice configuration, and tool search.
 //!
 //! # Example
 //!
@@ -14,11 +14,12 @@
 //!     input_schema: ToolInputSchema::new(),
 //!     cache_control: None,
 //!     tool_type: None,
+//!     defer_loading: None,
 //! };
 //! ```
 
 use crate::messages::CacheControl;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Tool definition
@@ -42,6 +43,14 @@ pub struct Tool {
     /// Tool type (defaults to "custom" if not specified)
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub tool_type: Option<String>,
+
+    /// Whether to defer loading this tool until discovered via tool search
+    ///
+    /// When set to `true`, the tool's full definition is not loaded into context
+    /// until Claude discovers it via the tool search tool. This is useful for
+    /// large tool catalogs (30+ tools) to save context tokens.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub defer_loading: Option<bool>,
 }
 
 impl Tool {
@@ -69,12 +78,32 @@ impl Tool {
             input_schema,
             cache_control: None,
             tool_type: None,
+            defer_loading: None,
         }
     }
 
     /// Create a new tool with cache control
     pub fn with_cache_control(mut self, cache_control: CacheControl) -> Self {
         self.cache_control = Some(cache_control);
+        self
+    }
+
+    /// Mark this tool for deferred loading via tool search
+    ///
+    /// When enabled, the tool's full definition is not loaded into context
+    /// until Claude discovers it via the tool search tool. This is useful for
+    /// large tool catalogs (30+ tools) to save context tokens.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mixtape_anthropic_sdk::{Tool, ToolInputSchema};
+    ///
+    /// let tool = Tool::new("email_send", "Send an email", ToolInputSchema::new())
+    ///     .with_defer_loading(true);
+    /// ```
+    pub fn with_defer_loading(mut self, defer: bool) -> Self {
+        self.defer_loading = Some(defer);
         self
     }
 }
@@ -259,6 +288,105 @@ impl ToolChoice {
 }
 
 // ============================================================================
+// Tool Search Types
+// ============================================================================
+
+/// Search algorithm type for tool search
+///
+/// Claude can use different algorithms to search your tool catalog:
+/// - **Regex**: Claude uses regex patterns like `"weather"`, `"get_.*_data"` - more precise
+/// - **BM25**: Claude uses natural language queries - better for semantic matching
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolSearchType {
+    /// Regex-based search using patterns like `"weather"`, `"get_.*_data"`
+    ///
+    /// More precise matching based on tool names and patterns.
+    #[default]
+    Regex,
+    /// BM25-based semantic search using natural language queries
+    ///
+    /// Better for semantic matching when tool names don't follow patterns.
+    Bm25,
+}
+
+/// Tool search tool configuration
+///
+/// The tool search tool allows Claude to dynamically discover tools from a large
+/// catalog instead of loading all tool definitions into context upfront.
+/// This is useful when you have 30+ tools.
+///
+/// # Example
+///
+/// ```
+/// use mixtape_anthropic_sdk::ToolSearchTool;
+///
+/// // Create a regex-based tool search (default, more precise)
+/// let search = ToolSearchTool::regex();
+///
+/// // Create a BM25-based tool search (semantic matching)
+/// let search = ToolSearchTool::bm25();
+///
+/// // Configure max results
+/// let search = ToolSearchTool::regex().with_max_results(10);
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolSearchTool {
+    /// Always "tool_search_tool" for this tool type
+    #[serde(rename = "type")]
+    pub tool_type: String,
+
+    /// Search algorithm type
+    pub search_type: ToolSearchType,
+
+    /// Optional custom name (defaults to "tool_search_tool")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// Maximum number of tools to return (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
+}
+
+impl ToolSearchTool {
+    /// Create a new regex-based tool search tool
+    ///
+    /// Regex search uses patterns like `"weather"`, `"get_.*_data"` for precise matching.
+    pub fn regex() -> Self {
+        Self {
+            tool_type: "tool_search_tool".to_string(),
+            search_type: ToolSearchType::Regex,
+            name: None,
+            max_results: None,
+        }
+    }
+
+    /// Create a new BM25-based tool search tool
+    ///
+    /// BM25 search uses natural language queries for semantic matching.
+    pub fn bm25() -> Self {
+        Self {
+            tool_type: "tool_search_tool".to_string(),
+            search_type: ToolSearchType::Bm25,
+            name: None,
+            max_results: None,
+        }
+    }
+
+    /// Set the maximum number of tools to return
+    pub fn with_max_results(mut self, max_results: u32) -> Self {
+        self.max_results = Some(max_results);
+        self
+    }
+
+    /// Set a custom name for the tool search tool
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -307,6 +435,7 @@ mod tests {
             input_schema: ToolInputSchema::new(),
             cache_control: None,
             tool_type: None,
+            defer_loading: None,
         };
         let json = serde_json::to_string(&tool).unwrap();
         assert!(json.contains("\"name\":\"get_weather\""));
@@ -432,5 +561,76 @@ mod tests {
         let required = tool_schema.required.as_ref().unwrap();
         assert!(required.contains(&"location".to_string()));
         assert!(!required.contains(&"unit".to_string()));
+    }
+
+    // ===== Tool Search Tests =====
+
+    #[test]
+    fn test_tool_search_tool_regex() {
+        let search = ToolSearchTool::regex();
+        assert_eq!(search.tool_type, "tool_search_tool");
+        assert_eq!(search.search_type, ToolSearchType::Regex);
+        assert!(search.name.is_none());
+        assert!(search.max_results.is_none());
+    }
+
+    #[test]
+    fn test_tool_search_tool_bm25() {
+        let search = ToolSearchTool::bm25();
+        assert_eq!(search.tool_type, "tool_search_tool");
+        assert_eq!(search.search_type, ToolSearchType::Bm25);
+    }
+
+    #[test]
+    fn test_tool_search_tool_with_max_results() {
+        let search = ToolSearchTool::regex().with_max_results(10);
+        assert_eq!(search.max_results, Some(10));
+    }
+
+    #[test]
+    fn test_tool_search_tool_with_name() {
+        let search = ToolSearchTool::regex().with_name("custom_search");
+        assert_eq!(search.name, Some("custom_search".to_string()));
+    }
+
+    #[test]
+    fn test_tool_search_tool_serialization() {
+        let search = ToolSearchTool::regex().with_max_results(5);
+        let json = serde_json::to_string(&search).unwrap();
+        assert!(json.contains("\"type\":\"tool_search_tool\""));
+        assert!(json.contains("\"search_type\":\"regex\""));
+        assert!(json.contains("\"max_results\":5"));
+    }
+
+    #[test]
+    fn test_tool_search_tool_bm25_serialization() {
+        let search = ToolSearchTool::bm25();
+        let json = serde_json::to_string(&search).unwrap();
+        assert!(json.contains("\"search_type\":\"bm25\""));
+    }
+
+    // ===== Tool Defer Loading Tests =====
+
+    #[test]
+    fn test_tool_with_defer_loading() {
+        let tool =
+            Tool::new("email", "Send email", ToolInputSchema::new()).with_defer_loading(true);
+        assert_eq!(tool.defer_loading, Some(true));
+    }
+
+    #[test]
+    fn test_tool_with_defer_loading_serialization() {
+        let tool =
+            Tool::new("email", "Send email", ToolInputSchema::new()).with_defer_loading(true);
+        let json = serde_json::to_string(&tool).unwrap();
+        assert!(json.contains("\"defer_loading\":true"));
+    }
+
+    #[test]
+    fn test_tool_without_defer_loading_serialization() {
+        let tool = Tool::new("email", "Send email", ToolInputSchema::new());
+        let json = serde_json::to_string(&tool).unwrap();
+        // defer_loading should not be present when None
+        assert!(!json.contains("defer_loading"));
     }
 }

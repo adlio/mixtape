@@ -591,6 +591,44 @@ impl BedrockProvider {
         self
     }
 
+    /// Enable tool search for dynamically discovering tools from a large catalog
+    ///
+    /// Tool search allows Claude to search for tools instead of loading all tool
+    /// definitions into context upfront. This is useful when you have 30+ tools.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let provider = BedrockProvider::new(ClaudeSonnet4_5)
+    ///     .await?
+    ///     .with_tool_search();
+    /// ```
+    pub fn with_tool_search(mut self) -> Self {
+        const BETA_KEY: &str = "anthropic_beta";
+        const TOOL_SEARCH: &str = "tool-search-tool-2025-10-19";
+
+        // Check if already enabled (idempotent)
+        if let Some(existing) = self.additional_fields.get(BETA_KEY) {
+            if let Some(arr) = existing.as_array() {
+                if arr.iter().any(|v| v.as_str() == Some(TOOL_SEARCH)) {
+                    return self;
+                }
+            }
+        }
+
+        // Add the beta feature
+        let betas = self
+            .additional_fields
+            .entry(BETA_KEY.to_string())
+            .or_insert_with(|| serde_json::json!([]));
+
+        if let Some(arr) = betas.as_array_mut() {
+            arr.push(serde_json::json!(TOOL_SEARCH));
+        }
+
+        self
+    }
+
     /// Add a custom field to `additionalModelRequestFields`
     ///
     /// Use this for model-specific parameters not covered by the standard builder methods.

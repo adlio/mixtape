@@ -133,3 +133,7 @@ required-features = ["anthropic"]
 [[example]]
 name = "permissions"
 required-features = ["bedrock"]
+
+[[example]]
+name = "tool_search"
+required-features = ["bedrock"]

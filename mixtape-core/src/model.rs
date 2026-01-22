@@ -108,6 +108,19 @@ pub trait Model: Send + Sync {
                 // Estimate tokens for thinking content
                 self.estimate_token_count(thinking) + self.estimate_token_count(signature) + 10
             }
+            ContentBlock::ServerToolUse(server_use) => {
+                // Server tool use (informational)
+                self.estimate_token_count(&server_use.name)
+                    + self.estimate_token_count(&server_use.id)
+                    + self.estimate_token_count(&server_use.input.to_string())
+                    + 10
+            }
+            ContentBlock::ToolSearchResult(result) => {
+                // Tool search result (informational)
+                self.estimate_token_count(&result.tool_use_id)
+                    + result.tool_references.len() * 10
+                    + 10
+            }
         }
     }
 }

@@ -222,8 +222,9 @@ pub use models::{
 pub use tokenizer::CharacterTokenizer;
 pub use tool::{box_tool, DocumentFormat, DynTool, ImageFormat, Tool, ToolError, ToolResult};
 pub use types::{
-    ContentBlock, Message, Role, StopReason, ThinkingConfig, ToolDefinition, ToolResultBlock,
-    ToolResultStatus, ToolUseBlock,
+    ContentBlock, Message, Role, ServerToolUseBlock, StopReason, ThinkingConfig, ToolDefinition,
+    ToolReference, ToolResultBlock, ToolResultStatus, ToolSearchResultBlock, ToolSearchType,
+    ToolUseBlock,
 };
 
 #[cfg(feature = "session")]

@@ -3,7 +3,8 @@
 use super::ProviderError;
 use crate::tool::{DocumentFormat, ImageFormat, ToolResult};
 use crate::types::{
-    ContentBlock, Message, Role, StopReason, ToolDefinition, ToolResultStatus, ToolUseBlock,
+    ContentBlock, Message, Role, ServerToolUseBlock, StopReason, ToolDefinition, ToolReference,
+    ToolResultStatus, ToolSearchResultBlock, ToolUseBlock,
 };
 use base64::Engine;
 use mixtape_anthropic_sdk::{
@@ -11,6 +12,7 @@ use mixtape_anthropic_sdk::{
     Message as AnthropicMessage, MessageContent, MessageParam, Role as AnthropicRole,
     StopReason as AnthropicStopReason, Tool as AnthropicTool, ToolInputSchema,
     ToolResultContent as AnthropicToolResultContent, ToolResultContentBlock,
+    ToolSearchResultContent,
 };
 
 // ===== Type Conversion: Mixtape -> Anthropic =====
@@ -24,7 +26,7 @@ pub fn to_anthropic_message(msg: &Message) -> Result<MessageParam, ProviderError
     let content_blocks: Vec<ContentBlockParam> = msg
         .content
         .iter()
-        .map(to_anthropic_content_block)
+        .filter_map(|block| to_anthropic_content_block(block).transpose())
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(MessageParam {
@@ -33,18 +35,20 @@ pub fn to_anthropic_message(msg: &Message) -> Result<MessageParam, ProviderError
     })
 }
 
-fn to_anthropic_content_block(block: &ContentBlock) -> Result<ContentBlockParam, ProviderError> {
+fn to_anthropic_content_block(
+    block: &ContentBlock,
+) -> Result<Option<ContentBlockParam>, ProviderError> {
     match block {
-        ContentBlock::Text(text) => Ok(ContentBlockParam::Text {
+        ContentBlock::Text(text) => Ok(Some(ContentBlockParam::Text {
             text: text.clone(),
             cache_control: None,
-        }),
-        ContentBlock::ToolUse(tool_use) => Ok(ContentBlockParam::ToolUse {
+        })),
+        ContentBlock::ToolUse(tool_use) => Ok(Some(ContentBlockParam::ToolUse {
             id: tool_use.id.clone(),
             name: tool_use.name.clone(),
             input: tool_use.input.clone(),
             cache_control: None,
-        }),
+        })),
         ContentBlock::ToolResult(result) => {
             // Convert content to proper Anthropic types
             let content_block = match &result.content {
@@ -75,23 +79,26 @@ fn to_anthropic_content_block(block: &ContentBlock) -> Result<ContentBlockParam,
                 }
             };
             let is_error = matches!(result.status, ToolResultStatus::Error);
-            Ok(ContentBlockParam::ToolResult {
+            Ok(Some(ContentBlockParam::ToolResult {
                 tool_use_id: result.tool_use_id.clone(),
                 content: Some(AnthropicToolResultContent::Blocks(vec![content_block])),
                 is_error: Some(is_error),
                 cache_control: None,
-            })
+            }))
         }
         ContentBlock::Thinking {
             thinking,
             signature,
         } => {
             // Pass thinking blocks back to the API for multi-turn conversations
-            Ok(ContentBlockParam::Thinking {
+            Ok(Some(ContentBlockParam::Thinking {
                 thinking: thinking.clone(),
                 signature: signature.clone(),
-            })
+            }))
         }
+        // Server-side blocks are informational only - don't send back to API
+        ContentBlock::ServerToolUse(_) => Ok(None),
+        ContentBlock::ToolSearchResult(_) => Ok(None),
     }
 }
 
@@ -105,6 +112,7 @@ pub fn to_anthropic_tool(tool: &ToolDefinition) -> Result<AnthropicTool, Provide
         input_schema,
         cache_control: None,
         tool_type: None,
+        defer_loading: if tool.defer_loading { Some(true) } else { None },
     })
 }
 
@@ -214,9 +222,33 @@ fn from_anthropic_content_block(block: &AnthropicContentBlock) -> Option<Content
             thinking: String::new(),
             signature: data.clone(),
         }),
-        // Server tool use blocks - not exposed to mixtape types yet
-        AnthropicContentBlock::ServerToolUse { .. } => None,
+        // Server tool use blocks - expose for transparency
+        AnthropicContentBlock::ServerToolUse { id, name, input } => {
+            Some(ContentBlock::ServerToolUse(ServerToolUseBlock {
+                id: id.clone(),
+                name: name.clone(),
+                input: input.clone(),
+            }))
+        }
+        // Web search results - skip for now (could be added as a new block type)
         AnthropicContentBlock::WebSearchToolResult { .. } => None,
+        // Tool search results - convert to core type
+        AnthropicContentBlock::ToolSearchToolResult {
+            tool_use_id,
+            content,
+        } => {
+            let tool_references = match content {
+                ToolSearchResultContent::ToolReferences { tool_references } => tool_references
+                    .iter()
+                    .map(|r| ToolReference::new(&r.name))
+                    .collect(),
+                ToolSearchResultContent::Error { .. } => Vec::new(),
+            };
+            Some(ContentBlock::ToolSearchResult(ToolSearchResultBlock {
+                tool_use_id: tool_use_id.clone(),
+                tool_references,
+            }))
+        }
     }
 }
 
@@ -411,6 +443,7 @@ mod tests {
                 },
                 "required": ["query"]
             }),
+            defer_loading: false,
         };
 
         let anthropic_tool = to_anthropic_tool(&tool_def).unwrap();
@@ -431,6 +464,7 @@ mod tests {
             anthropic_tool.input_schema.required,
             Some(vec!["query".to_string()])
         );
+        assert!(anthropic_tool.defer_loading.is_none());
     }
 
     #[test]
@@ -816,6 +850,7 @@ mod tests {
                 "required": ["name"],
                 "additionalProperties": false
             }),
+            defer_loading: false,
         };
 
         let anthropic_tool = to_anthropic_tool(&tool_def).unwrap();
@@ -836,11 +871,25 @@ mod tests {
             input_schema: serde_json::json!({
                 "type": "object"
             }),
+            defer_loading: false,
         };
 
         let anthropic_tool = to_anthropic_tool(&tool_def).unwrap();
         assert_eq!(anthropic_tool.name, "minimal");
         assert!(anthropic_tool.input_schema.properties.is_none());
         assert!(anthropic_tool.input_schema.required.is_none());
+    }
+
+    #[test]
+    fn test_tool_definition_with_defer_loading() {
+        let tool_def = ToolDefinition {
+            name: "deferred_tool".to_string(),
+            description: "A deferred tool".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            defer_loading: true,
+        };
+
+        let anthropic_tool = to_anthropic_tool(&tool_def).unwrap();
+        assert_eq!(anthropic_tool.defer_loading, Some(true));
     }
 }

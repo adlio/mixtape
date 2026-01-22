@@ -193,6 +193,7 @@ mod tests {
             input_schema: crate::tools::ToolInputSchema::new(),
             cache_control: None,
             tool_type: None,
+            defer_loading: None,
         };
 
         let params = CountTokensParams::builder("test-model")

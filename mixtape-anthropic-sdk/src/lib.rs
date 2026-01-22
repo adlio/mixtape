@@ -70,6 +70,7 @@
 //!     input_schema: ToolInputSchema::new(),
 //!     cache_control: None,
 //!     tool_type: None,
+//!     defer_loading: None,
 //! };
 //!
 //! let params = MessageCreateParams::builder("claude-sonnet-4-20250514", 1024)
@@ -193,8 +194,13 @@ pub use messages::{
 // Messages - response types
 pub use messages::{ContentBlock, Message, StopReason, Usage};
 
+// Messages - tool search types
+pub use messages::{
+    ServerToolUseUsage, ToolReference, ToolSearchErrorCode, ToolSearchResultContent,
+};
+
 // Tools
-pub use tools::{Tool, ToolChoice, ToolInputSchema};
+pub use tools::{Tool, ToolChoice, ToolInputSchema, ToolSearchTool, ToolSearchType};
 
 // Batch API
 pub use batch::{

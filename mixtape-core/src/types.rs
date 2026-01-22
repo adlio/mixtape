@@ -120,6 +120,16 @@ pub enum ContentBlock {
         /// Signature for multi-turn thinking verification
         signature: String,
     },
+    /// Server tool use (server-side tools like web search or tool search)
+    ///
+    /// These are informational blocks showing server-side tool invocations.
+    /// Developers don't need to execute these - they're handled by the API.
+    ServerToolUse(ServerToolUseBlock),
+    /// Tool search result from server
+    ///
+    /// Contains references to tools discovered via tool search.
+    /// The API automatically expands these references.
+    ToolSearchResult(ToolSearchResultBlock),
 }
 
 /// A tool use request from the model
@@ -131,6 +141,46 @@ pub struct ToolUseBlock {
     pub name: String,
     /// Tool input parameters as JSON
     pub input: Value,
+}
+
+/// A server-side tool use block (informational)
+///
+/// These blocks are returned when the API invokes server-side tools
+/// like web search or tool search. Developers see these for transparency
+/// but don't need to execute them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerToolUseBlock {
+    /// Unique ID for this tool use
+    pub id: String,
+    /// Tool name (e.g., "web_search_tool", "tool_search_tool")
+    pub name: String,
+    /// Tool input parameters as JSON
+    pub input: Value,
+}
+
+/// Result from a tool search operation
+///
+/// Contains references to tools discovered via the tool search API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolSearchResultBlock {
+    /// ID of the tool search request this result belongs to
+    pub tool_use_id: String,
+    /// Discovered tool references
+    pub tool_references: Vec<ToolReference>,
+}
+
+/// A reference to a discovered tool from tool search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolReference {
+    /// Name of the discovered tool
+    pub name: String,
+}
+
+impl ToolReference {
+    /// Create a new tool reference
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
 }
 
 /// Result of a tool execution
@@ -161,6 +211,13 @@ pub struct ToolDefinition {
     pub description: String,
     /// JSON Schema for input parameters
     pub input_schema: Value,
+    /// Whether this tool should be deferred until discovered via tool search
+    ///
+    /// When `true`, the tool's full definition is not loaded into context
+    /// until Claude discovers it via the tool search tool. This is useful
+    /// for large tool catalogs (30+ tools) to save context tokens.
+    #[serde(default)]
+    pub defer_loading: bool,
 }
 
 /// Why the model stopped generating
@@ -194,6 +251,24 @@ pub enum ThinkingConfig {
     },
     /// Disable extended thinking
     Disabled,
+}
+
+/// Search algorithm type for tool search
+///
+/// Claude can use different algorithms to search your tool catalog:
+/// - **Regex**: Claude uses regex patterns like `"weather"`, `"get_.*_data"` - more precise
+/// - **Bm25**: Claude uses natural language queries - better for semantic matching
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ToolSearchType {
+    /// Regex-based search using patterns like `"weather"`, `"get_.*_data"`
+    ///
+    /// More precise matching based on tool names and patterns.
+    #[default]
+    Regex,
+    /// BM25-based semantic search using natural language queries
+    ///
+    /// Better for semantic matching when tool names don't follow patterns.
+    Bm25,
 }
 
 impl ThinkingConfig {

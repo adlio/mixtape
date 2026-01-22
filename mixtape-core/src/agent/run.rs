@@ -99,14 +99,19 @@ impl Agent {
             .add_message(Message::user(user_message));
 
         loop {
-            // Build tool definitions
+            // Build tool definitions (marking deferred tools appropriately)
             let tool_defs: Vec<ToolDefinition> = self
                 .tools
                 .iter()
-                .map(|t| ToolDefinition {
-                    name: t.name().to_string(),
-                    description: t.description().to_string(),
-                    input_schema: t.input_schema(),
+                .map(|t| {
+                    let name = t.name().to_string();
+                    let defer_loading = self.deferred_tool_names.contains(&name);
+                    ToolDefinition {
+                        name,
+                        description: t.description().to_string(),
+                        input_schema: t.input_schema(),
+                        defer_loading,
+                    }
                 })
                 .collect();
 

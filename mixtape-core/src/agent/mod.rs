@@ -28,7 +28,7 @@ pub use types::{
 #[cfg(feature = "session")]
 pub use types::SessionInfo;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
@@ -38,7 +38,7 @@ use crate::events::{AgentEvent, AgentHook};
 use crate::permission::{AuthorizationResponse, ToolCallAuthorizer};
 use crate::provider::ModelProvider;
 use crate::tool::DynTool;
-use crate::types::Message;
+use crate::types::{Message, ToolSearchType};
 
 #[cfg(feature = "session")]
 use crate::session::SessionStore;
@@ -68,6 +68,12 @@ pub struct Agent {
     pub(super) system_prompt: Option<String>,
     pub(super) max_concurrent_tools: usize,
     pub(super) tools: Vec<Box<dyn DynTool>>,
+    /// Names of tools that are deferred (discovered via tool search)
+    pub(super) deferred_tool_names: HashSet<String>,
+    /// Tool search algorithm type (when deferred tools are present)
+    /// Note: Used when provider-level tool search integration is implemented
+    #[allow(dead_code)]
+    pub(super) tool_search_type: Option<ToolSearchType>,
     pub(super) hooks: Arc<parking_lot::RwLock<Vec<Arc<dyn AgentHook>>>>,
     /// Tool call authorizer (always present, uses MemoryGrantStore by default)
     pub(super) authorizer: Arc<RwLock<ToolCallAuthorizer>>,

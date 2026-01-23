@@ -16,6 +16,7 @@ session = []
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
 anthropic = ["dep:mixtape-anthropic-sdk", "dep:base64"]
 mcp = ["dep:rmcp", "dep:reqwest", "dep:shellexpand"]
+test-utils = []
 
 [dependencies]
 async-stream.workspace = true

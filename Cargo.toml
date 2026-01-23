@@ -1,5 +1,5 @@
 [workspace]
-members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli"]
+members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli", "mixtape-server"]
 resolver = "2"
 
 [workspace.package]
@@ -14,13 +14,20 @@ mixtape-core = { version = "0.2.1", path = "./mixtape-core" }
 mixtape-anthropic-sdk = { version = "0.2.1", path = "./mixtape-anthropic-sdk" }
 mixtape-tools = { path = "./mixtape-tools" }
 mixtape-cli = { path = "./mixtape-cli" }
+mixtape-server = { path = "./mixtape-server" }
 
 # Async runtime
 tokio = { version = "1.41", features = ["full"] }
 tokio-test = "0.4"
+tokio-stream = "0.1"
 async-trait = "0.1"
 async-stream = "0.3"
 futures = "0.3"
+
+# HTTP Server
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

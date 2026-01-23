@@ -143,6 +143,9 @@ pub mod mcp;
 #[cfg(feature = "session")]
 pub mod session;
 
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
+
 pub use agent::{
     Agent, AgentBuilder, AgentError, AgentResponse, ContextConfig, ContextError, ContextLoadResult,
     ContextSource, PermissionError, TokenUsageStats, ToolCallInfo, ToolInfo,
@@ -154,7 +157,7 @@ pub use conversation::{
     TokenEstimator,
 };
 pub use error::{Error, Result};
-pub use events::{AgentEvent, AgentHook, TokenUsage};
+pub use events::{AgentEvent, AgentHook, HookId, TokenUsage};
 
 pub use model::{
     AnthropicModel, BedrockModel, InferenceProfile, Model, ModelRequest, ModelResponse,

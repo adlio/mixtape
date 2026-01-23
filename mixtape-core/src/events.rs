@@ -218,6 +218,12 @@ where
     }
 }
 
+/// Unique identifier for a registered hook.
+///
+/// Used to remove hooks via [`crate::Agent::remove_hook`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HookId(pub(crate) u64);
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,14 +9,14 @@
 //! # Run all models
 //! cargo run --example model_verification
 //!
-//! # Run specific providers
-//! cargo run --example model_verification -- --providers anthropic,amazon
+//! # Run specific vendors
+//! cargo run --example model_verification -- --vendors anthropic,amazon
 //!
 //! # Run specific models
 //! cargo run --example model_verification -- --models ClaudeSonnet4_5,NovaPro
 //!
 //! # Combine filters
-//! cargo run --example model_verification -- --providers meta --models Llama3_3_70B
+//! cargo run --example model_verification -- --vendors meta --models Llama3_3_70B
 //! ```
 //!
 //! # Requirements
@@ -171,6 +171,18 @@ const MODELS: &[ModelInfo] = &[
         vendor: "anthropic",
         supports_tools: true,
     },
+    ModelInfo {
+        key: "ClaudeOpus4_1",
+        name: "Claude Opus 4.1",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "ClaudeOpus4_6",
+        name: "Claude Opus 4.6",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
     // Amazon Nova
     ModelInfo {
         key: "NovaMicro",
@@ -202,6 +214,12 @@ const MODELS: &[ModelInfo] = &[
         vendor: "amazon",
         supports_tools: true,
     },
+    ModelInfo {
+        key: "Nova2Sonic",
+        name: "Nova 2 Sonic",
+        vendor: "amazon",
+        supports_tools: true,
+    },
     // Mistral
     ModelInfo {
         key: "MistralLarge3",
@@ -212,6 +230,42 @@ const MODELS: &[ModelInfo] = &[
     ModelInfo {
         key: "MagistralSmall",
         name: "Magistral Small",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Ministral3B",
+        name: "Ministral 3B",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Ministral8B",
+        name: "Ministral 8B",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Ministral14B",
+        name: "Ministral 14B",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "PixtralLarge",
+        name: "Pixtral Large",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "VoxtralMini3B",
+        name: "Voxtral Mini 3B",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "VoxtralSmall24B",
+        name: "Voxtral Small 24B",
         vendor: "mistral",
         supports_tools: true,
     },
@@ -235,10 +289,46 @@ const MODELS: &[ModelInfo] = &[
         vendor: "qwen",
         supports_tools: true,
     },
+    ModelInfo {
+        key: "Qwen3_32B",
+        name: "Qwen3 32B",
+        vendor: "qwen",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Qwen3Coder30B",
+        name: "Qwen3 Coder 30B",
+        vendor: "qwen",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Qwen3Next80B",
+        name: "Qwen3 Next 80B",
+        vendor: "qwen",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Qwen3VL235B",
+        name: "Qwen3 VL 235B",
+        vendor: "qwen",
+        supports_tools: true,
+    },
     // Google
     ModelInfo {
         key: "Gemma3_27B",
         name: "Gemma 3 27B",
+        vendor: "google",
+        supports_tools: false, // Gemma doesn't support tool use on Bedrock
+    },
+    ModelInfo {
+        key: "Gemma3_12B",
+        name: "Gemma 3 12B",
+        vendor: "google",
+        supports_tools: false, // Gemma doesn't support tool use on Bedrock
+    },
+    ModelInfo {
+        key: "Gemma3_4B",
+        name: "Gemma 3 4B",
         vendor: "google",
         supports_tools: false, // Gemma doesn't support tool use on Bedrock
     },
@@ -250,8 +340,14 @@ const MODELS: &[ModelInfo] = &[
         supports_tools: false, // R1 is reasoning-focused, limited tool support
     },
     ModelInfo {
-        key: "DeepSeekV3",
+        key: "DeepSeekV3_1",
         name: "DeepSeek V3.1",
+        vendor: "deepseek",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "DeepSeekV3_2",
+        name: "DeepSeek V3.2",
         vendor: "deepseek",
         supports_tools: true,
     },
@@ -259,6 +355,12 @@ const MODELS: &[ModelInfo] = &[
     ModelInfo {
         key: "KimiK2Thinking",
         name: "Kimi K2 Thinking",
+        vendor: "moonshot",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "KimiK2_5",
+        name: "Kimi K2.5",
         vendor: "moonshot",
         supports_tools: true,
     },
@@ -357,203 +459,81 @@ enum TestStatus {
 // Model Creation
 // =============================================================================
 
-/// Create a provider with US inference profile for cross-region failover reliability
+/// Create a Bedrock provider for a model key, with US inference profile.
+///
+/// Uses the `bedrock_provider_match!` macro since every arm is identical
+/// except for the model type name.
+macro_rules! bedrock_provider_match {
+    ($key:expr, $($name:ident),+ $(,)?) => {
+        match $key {
+            $(stringify!($name) => Some(Arc::new(
+                BedrockProvider::new($name).await.ok()?.with_inference_profile(InferenceProfile::US),
+            )),)+
+            _ => None,
+        }
+    };
+}
+
 async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
-    match key {
-        // Anthropic
-        "Claude3_7Sonnet" => Some(Arc::new(
-            BedrockProvider::new(Claude3_7Sonnet)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "ClaudeOpus4" => Some(Arc::new(
-            BedrockProvider::new(ClaudeOpus4)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "ClaudeSonnet4" => Some(Arc::new(
-            BedrockProvider::new(ClaudeSonnet4)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "ClaudeSonnet4_5" => Some(Arc::new(
-            BedrockProvider::new(ClaudeSonnet4_5)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "ClaudeHaiku4_5" => Some(Arc::new(
-            BedrockProvider::new(ClaudeHaiku4_5)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "ClaudeOpus4_5" => Some(Arc::new(
-            BedrockProvider::new(ClaudeOpus4_5)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
+    bedrock_provider_match!(
+        key,
+        // Anthropic Claude
+        Claude3_7Sonnet,
+        ClaudeOpus4,
+        ClaudeOpus4_1,
+        ClaudeOpus4_5,
+        ClaudeOpus4_6,
+        ClaudeSonnet4,
+        ClaudeSonnet4_5,
+        ClaudeHaiku4_5,
         // Amazon Nova
-        "NovaMicro" => Some(Arc::new(
-            BedrockProvider::new(NovaMicro)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "NovaLite" => Some(Arc::new(
-            BedrockProvider::new(NovaLite)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Nova2Lite" => Some(Arc::new(
-            BedrockProvider::new(Nova2Lite)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "NovaPro" => Some(Arc::new(
-            BedrockProvider::new(NovaPro)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "NovaPremier" => Some(Arc::new(
-            BedrockProvider::new(NovaPremier)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
+        NovaMicro,
+        NovaLite,
+        Nova2Lite,
+        NovaPro,
+        NovaPremier,
+        Nova2Sonic,
         // Mistral
-        "MistralLarge3" => Some(Arc::new(
-            BedrockProvider::new(MistralLarge3)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "MagistralSmall" => Some(Arc::new(
-            BedrockProvider::new(MagistralSmall)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
+        MistralLarge3,
+        MagistralSmall,
+        Ministral3B,
+        Ministral8B,
+        Ministral14B,
+        PixtralLarge,
+        VoxtralMini3B,
+        VoxtralSmall24B,
         // Cohere
-        "CohereCommandRPlus" => Some(Arc::new(
-            BedrockProvider::new(CohereCommandRPlus)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        // Qwen
-        "Qwen3_235B" => Some(Arc::new(
-            BedrockProvider::new(Qwen3_235B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Qwen3Coder480B" => Some(Arc::new(
-            BedrockProvider::new(Qwen3Coder480B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
+        CohereCommandRPlus,
+        // Alibaba Qwen
+        Qwen3_235B,
+        Qwen3Coder480B,
+        Qwen3_32B,
+        Qwen3Coder30B,
+        Qwen3Next80B,
+        Qwen3VL235B,
         // Google
-        "Gemma3_27B" => Some(Arc::new(
-            BedrockProvider::new(Gemma3_27B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
+        Gemma3_27B,
+        Gemma3_12B,
+        Gemma3_4B,
         // DeepSeek
-        "DeepSeekR1" => Some(Arc::new(
-            BedrockProvider::new(DeepSeekR1)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "DeepSeekV3" => Some(Arc::new(
-            BedrockProvider::new(DeepSeekV3)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
+        DeepSeekR1,
+        DeepSeekV3_1,
+        DeepSeekV3_2,
         // Moonshot
-        "KimiK2Thinking" => Some(Arc::new(
-            BedrockProvider::new(KimiK2Thinking)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        // Meta Llama 4
-        "Llama4Scout17B" => Some(Arc::new(
-            BedrockProvider::new(Llama4Scout17B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Llama4Maverick17B" => Some(Arc::new(
-            BedrockProvider::new(Llama4Maverick17B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        // Meta Llama 3.3
-        "Llama3_3_70B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_3_70B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        // Meta Llama 3.2
-        "Llama3_2_90B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_2_90B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Llama3_2_11B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_2_11B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Llama3_2_3B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_2_3B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Llama3_2_1B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_2_1B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        // Meta Llama 3.1
-        "Llama3_1_405B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_1_405B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Llama3_1_70B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_1_70B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        "Llama3_1_8B" => Some(Arc::new(
-            BedrockProvider::new(Llama3_1_8B)
-                .await
-                .ok()?
-                .with_inference_profile(InferenceProfile::US),
-        )),
-        _ => None,
-    }
+        KimiK2Thinking,
+        KimiK2_5,
+        // Meta Llama
+        Llama4Scout17B,
+        Llama4Maverick17B,
+        Llama3_3_70B,
+        Llama3_2_90B,
+        Llama3_2_11B,
+        Llama3_2_3B,
+        Llama3_2_1B,
+        Llama3_1_405B,
+        Llama3_1_70B,
+        Llama3_1_8B,
+    )
 }
 
 // =============================================================================
@@ -625,14 +605,16 @@ VENDORS (model creators, all accessed via AWS Bedrock):
 
 MODELS:
     Claude:       Claude3_7Sonnet, ClaudeOpus4, ClaudeSonnet4, ClaudeSonnet4_5,
-                  ClaudeHaiku4_5, ClaudeOpus4_5
-    Nova:         NovaMicro, NovaLite, Nova2Lite, NovaPro, NovaPremier
-    Mistral:      MistralLarge3, MagistralSmall
+                  ClaudeHaiku4_5, ClaudeOpus4_5, ClaudeOpus4_1, ClaudeOpus4_6
+    Nova:         NovaMicro, NovaLite, Nova2Lite, NovaPro, NovaPremier, Nova2Sonic
+    Mistral:      MistralLarge3, MagistralSmall, Ministral3B, Ministral8B,
+                  Ministral14B, PixtralLarge, VoxtralMini3B, VoxtralSmall24B
     Cohere:       CohereCommandRPlus
-    Qwen:         Qwen3_235B, Qwen3Coder480B
-    Google:       Gemma3_27B
-    DeepSeek:     DeepSeekR1, DeepSeekV3
-    Moonshot:     KimiK2Thinking
+    Qwen:         Qwen3_235B, Qwen3Coder480B, Qwen3_32B, Qwen3Coder30B,
+                  Qwen3Next80B, Qwen3VL235B
+    Google:       Gemma3_27B, Gemma3_12B, Gemma3_4B
+    DeepSeek:     DeepSeekR1, DeepSeekV3_1, DeepSeekV3_2
+    Moonshot:     KimiK2Thinking, KimiK2_5
     Llama 4:      Llama4Scout17B, Llama4Maverick17B
     Llama 3.3:    Llama3_3_70B
     Llama 3.2:    Llama3_2_90B, Llama3_2_11B, Llama3_2_3B, Llama3_2_1B

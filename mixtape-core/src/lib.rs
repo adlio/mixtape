@@ -176,48 +176,36 @@ pub use provider::AnthropicProvider;
 #[cfg(feature = "bedrock")]
 pub use provider::BedrockProvider;
 
-// Models (organized by vendor)
+// Models — separate `pub use` blocks per vendor so cargo fmt sorts within each
+// block independently rather than merging across vendor boundaries.
+
+// Anthropic Claude
 pub use models::{
-    // Anthropic Claude
-    Claude3_7Sonnet,
-    ClaudeHaiku4_5,
-    ClaudeOpus4,
-    ClaudeOpus4_5,
-    ClaudeSonnet4,
-    ClaudeSonnet4_5,
-    // Cohere
-    CohereCommandRPlus,
-    // DeepSeek
-    DeepSeekR1,
-    DeepSeekV3,
-    // Google
-    Gemma3_27B,
-    // Moonshot Kimi
-    KimiK2Thinking,
-    // Meta Llama
-    Llama3_1_405B,
-    Llama3_1_70B,
-    Llama3_1_8B,
-    Llama3_2_11B,
-    Llama3_2_1B,
-    Llama3_2_3B,
-    Llama3_2_90B,
-    Llama3_3_70B,
-    Llama4Maverick17B,
-    Llama4Scout17B,
-    // Mistral
-    MagistralSmall,
-    MistralLarge3,
-    // Amazon Nova
-    Nova2Lite,
-    NovaLite,
-    NovaMicro,
-    NovaPremier,
-    NovaPro,
-    // Alibaba Qwen
-    Qwen3Coder480B,
-    Qwen3_235B,
+    Claude3_7Sonnet, ClaudeHaiku4_5, ClaudeOpus4, ClaudeOpus4_1, ClaudeOpus4_5, ClaudeOpus4_6,
+    ClaudeSonnet4, ClaudeSonnet4_5,
 };
+// Amazon Nova
+pub use models::{Nova2Lite, Nova2Sonic, NovaLite, NovaMicro, NovaPremier, NovaPro};
+// Cohere
+pub use models::CohereCommandRPlus;
+// DeepSeek
+pub use models::{DeepSeekR1, DeepSeekV3_1, DeepSeekV3_2};
+// Google
+pub use models::{Gemma3_12B, Gemma3_27B, Gemma3_4B};
+// Meta Llama
+pub use models::{
+    Llama3_1_405B, Llama3_1_70B, Llama3_1_8B, Llama3_2_11B, Llama3_2_1B, Llama3_2_3B, Llama3_2_90B,
+    Llama3_3_70B, Llama4Maverick17B, Llama4Scout17B,
+};
+// Mistral
+pub use models::{
+    MagistralSmall, Ministral14B, Ministral3B, Ministral8B, MistralLarge3, PixtralLarge,
+    VoxtralMini3B, VoxtralSmall24B,
+};
+// Moonshot Kimi
+pub use models::{KimiK2Thinking, KimiK2_5};
+// Alibaba Qwen
+pub use models::{Qwen3Coder30B, Qwen3Coder480B, Qwen3Next80B, Qwen3VL235B, Qwen3_235B, Qwen3_32B};
 
 pub use tokenizer::CharacterTokenizer;
 pub use tool::{box_tool, DocumentFormat, DynTool, ImageFormat, Tool, ToolError, ToolResult};

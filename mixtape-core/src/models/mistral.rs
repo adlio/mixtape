@@ -21,3 +21,63 @@ define_model!(
         output_tokens: 8_192
     }
 );
+
+define_model!(
+    /// Ministral 3B - Compact 3B instruction model
+    Ministral3B {
+        display_name: "Ministral 3B",
+        bedrock_id: "mistral.ministral-3-3b-instruct",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Ministral 8B - Efficient 8B instruction model
+    Ministral8B {
+        display_name: "Ministral 8B",
+        bedrock_id: "mistral.ministral-3-8b-instruct",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Ministral 14B - Mid-size 14B instruction model
+    Ministral14B {
+        display_name: "Ministral 14B",
+        bedrock_id: "mistral.ministral-3-14b-instruct",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Pixtral Large - Vision-capable large model
+    PixtralLarge {
+        display_name: "Pixtral Large",
+        bedrock_id: "mistral.pixtral-large-2502-v1:0",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Voxtral Mini 3B - Speech and text input model
+    VoxtralMini3B {
+        display_name: "Voxtral Mini 3B",
+        bedrock_id: "mistral.voxtral-mini-3b-2507",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Voxtral Small 24B - Speech and text input model
+    VoxtralSmall24B {
+        display_name: "Voxtral Small 24B",
+        bedrock_id: "mistral.voxtral-small-24b-2507",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);

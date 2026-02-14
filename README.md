@@ -39,7 +39,7 @@ leverage foundational agentic tools.
 # In your Cargo.toml
 
 [dependencies]
-mixtape-core = { version = "0.1", features = ["bedrock"] }
+mixtape-core = { version = "0.3", features = ["bedrock"] }
 ```
 
 | Feature     | Description            |
@@ -53,13 +53,14 @@ Add `mcp` for MCP server integration, `session` for conversation persistence.
 
 ## Workspace Crates
 
-This repository contains four crates:
+This repository contains five crates:
 
 | Crate                     | Purpose                                                |
 |---------------------------|--------------------------------------------------------|
 | **mixtape-core**          | Core agent framework                                   |
 | **mixtape-tools**         | Pre-built filesystem, process, web, and database tools |
 | **mixtape-cli**           | Session storage and interactive REPL features          |
+| **mixtape-server**        | HTTP server with AG-UI protocol support *(experimental)* |
 | **mixtape-anthropic-sdk** | Low-level Anthropic API client (used internally)       |
 
 Most projects need only `mixtape-core`. Add `mixtape-tools` for ready-to-use tools.
@@ -158,8 +159,8 @@ Save conversations to SQLite (requires `session` feature and `mixtape-cli` crate
 
 ```toml
 [dependencies]
-mixtape = { version = "0.1", features = ["session"] }
-mixtape-cli = "0.1"
+mixtape = { version = "0.3", features = ["session"] }
+mixtape-cli = "0.3"
 ```
 
 ```rust
@@ -334,7 +335,7 @@ Agent::builder().bedrock(NovaPro).build().await?;
 Agent::builder().anthropic(ClaudeSonnet4_5, api_key).build().await?;
 ```
 
-Bedrock supports Claude, Nova, Mistral, Llama, Cohere, DeepSeek, and others.
+Bedrock supports Claude, Nova, Mistral, Llama, Cohere, DeepSeek, Qwen, Gemma, Kimi, and others.
 
 ## Examples
 

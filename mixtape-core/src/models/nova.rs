@@ -53,3 +53,14 @@ define_model!(
         output_tokens: 5_000
     }
 );
+
+define_model!(
+    /// Nova 2 Sonic - Next-gen Nova model with 1M context
+    Nova2Sonic {
+        display_name: "Nova 2 Sonic",
+        bedrock_id: "amazon.nova-2-sonic-v1:0",
+        context_tokens: 1_000_000,
+        output_tokens: 65_535,
+        default_inference_profile: InferenceProfile::Global
+    }
+);

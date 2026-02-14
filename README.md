@@ -1,8 +1,10 @@
 # Mixtape
 
+[![Crates.io](https://img.shields.io/crates/v/mixtape-core.svg)](https://crates.io/crates/mixtape-core)
+[![Documentation](https://docs.rs/mixtape-core/badge.svg)](https://docs.rs/mixtape-core)
 [![CI](https://github.com/adlio/mixtape/actions/workflows/ci.yml/badge.svg)](https://github.com/adlio/mixtape/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/adlio/mixtape/branch/main/graph/badge.svg)](https://codecov.io/gh/adlio/mixtape)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![codecov](https://codecov.io/gh/adlio/mixtape/graph/badge.svg)](https://codecov.io/gh/adlio/mixtape)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 An agentic AI framework for Rust.
 

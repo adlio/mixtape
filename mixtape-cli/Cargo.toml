@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "Session storage and REPL utilities for the mixtape agent framework"
 documentation = "https://docs.rs/mixtape-cli"
 readme = "README.md"
 keywords = ["ai", "agents", "cli", "repl", "session"]
 categories = ["command-line-utilities", "development-tools"]
+exclude = [".cargo-husky/", ".claude/", ".github/", ".idea/"]
 
 [dependencies]
 mixtape-core = { workspace = true, features = ["session"] }

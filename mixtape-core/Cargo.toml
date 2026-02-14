@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "An agentic AI framework for Rust"
 documentation = "https://docs.rs/mixtape-core"
 readme = "../README.md"
 keywords = ["ai", "agents", "llm", "anthropic", "tools"]
 categories = ["development-tools", "api-bindings", "asynchronous"]
+exclude = [".cargo-husky/", ".claude/", ".github/", ".idea/"]
 
 [features]
 default = []

@@ -14,9 +14,19 @@ define_model!(
 
 define_model!(
     /// DeepSeek V3.1 - General purpose model
-    DeepSeekV3 {
+    DeepSeekV3_1 {
         display_name: "DeepSeek V3.1",
         bedrock_id: "deepseek.v3-v1:0",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// DeepSeek V3.2 - Updated general purpose model
+    DeepSeekV3_2 {
+        display_name: "DeepSeek V3.2",
+        bedrock_id: "deepseek.v3.2",
         context_tokens: 128_000,
         output_tokens: 8_192
     }

@@ -115,7 +115,7 @@ pub(crate) use define_model;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{AnthropicModel, BedrockModel, Model};
+    use crate::model::{AnthropicModel, BedrockModel, InferenceProfile, Model};
 
     #[test]
     fn test_claude_implements_both_traits() {
@@ -163,20 +163,37 @@ mod tests {
             &ClaudeSonnet4_5,
             &ClaudeHaiku4_5,
             &ClaudeOpus4_5,
+            &ClaudeOpus4_1,
+            &ClaudeOpus4_6,
             &NovaMicro,
             &NovaLite,
             &Nova2Lite,
             &NovaPro,
             &NovaPremier,
+            &Nova2Sonic,
             &MistralLarge3,
             &MagistralSmall,
+            &Ministral3B,
+            &Ministral8B,
+            &Ministral14B,
+            &PixtralLarge,
+            &VoxtralMini3B,
+            &VoxtralSmall24B,
             &CohereCommandRPlus,
             &Qwen3_235B,
             &Qwen3Coder480B,
+            &Qwen3_32B,
+            &Qwen3Coder30B,
+            &Qwen3Next80B,
+            &Qwen3VL235B,
             &Gemma3_27B,
+            &Gemma3_12B,
+            &Gemma3_4B,
             &DeepSeekR1,
-            &DeepSeekV3,
+            &DeepSeekV3_1,
+            &DeepSeekV3_2,
             &KimiK2Thinking,
+            &KimiK2_5,
             &Llama4Scout17B,
             &Llama4Maverick17B,
             &Llama3_3_70B,
@@ -200,6 +217,56 @@ mod tests {
                 id.contains('.'),
                 "Model ID should contain provider prefix: {}",
                 id
+            );
+        }
+    }
+
+    #[test]
+    fn test_global_inference_profile_models() {
+        // Models that require Global inference profile should return it
+        let global_models: Vec<&dyn BedrockModel> = vec![
+            &ClaudeOpus4,
+            &ClaudeOpus4_1,
+            &ClaudeOpus4_5,
+            &ClaudeOpus4_6,
+            &ClaudeSonnet4,
+            &ClaudeSonnet4_5,
+            &ClaudeHaiku4_5,
+            &Nova2Lite,
+            &Nova2Sonic,
+        ];
+
+        for model in global_models {
+            assert_eq!(
+                model.default_inference_profile(),
+                InferenceProfile::Global,
+                "{} should have Global inference profile",
+                model.bedrock_id()
+            );
+        }
+    }
+
+    #[test]
+    fn test_default_inference_profile_models() {
+        // Models without an explicit profile should return None (the default)
+        let default_models: Vec<&dyn BedrockModel> = vec![
+            &Claude3_7Sonnet,
+            &NovaMicro,
+            &NovaLite,
+            &NovaPro,
+            &NovaPremier,
+            &MistralLarge3,
+            &Gemma3_27B,
+            &DeepSeekR1,
+            &KimiK2Thinking,
+        ];
+
+        for model in default_models {
+            assert_eq!(
+                model.default_inference_profile(),
+                InferenceProfile::None,
+                "{} should have None (default) inference profile",
+                model.bedrock_id()
             );
         }
     }

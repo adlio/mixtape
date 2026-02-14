@@ -9,7 +9,7 @@ define_model!(
         display_name: "Claude 3.7 Sonnet",
         bedrock_id: "anthropic.claude-3-7-sonnet-20250219-v1:0",
         context_tokens: 200_000,
-        output_tokens: 8_192,
+        output_tokens: 64_000,
         anthropic_id: "claude-3-7-sonnet-20250219"
     }
 );
@@ -22,6 +22,42 @@ define_model!(
         context_tokens: 200_000,
         output_tokens: 32_000,
         anthropic_id: "claude-opus-4-20250514",
+        default_inference_profile: InferenceProfile::Global
+    }
+);
+
+define_model!(
+    /// Claude Opus 4.1 - Advanced reasoning model
+    ClaudeOpus4_1 {
+        display_name: "Claude Opus 4.1",
+        bedrock_id: "anthropic.claude-opus-4-1-20250805-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 32_000,
+        anthropic_id: "claude-opus-4-1-20250805",
+        default_inference_profile: InferenceProfile::Global
+    }
+);
+
+define_model!(
+    /// Claude Opus 4.5 - High-capability reasoning and creative writing model
+    ClaudeOpus4_5 {
+        display_name: "Claude Opus 4.5",
+        bedrock_id: "anthropic.claude-opus-4-5-20251101-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 64_000,
+        anthropic_id: "claude-opus-4-5-20251101",
+        default_inference_profile: InferenceProfile::Global
+    }
+);
+
+define_model!(
+    /// Claude Opus 4.6 - Flagship Claude model with 128K output
+    ClaudeOpus4_6 {
+        display_name: "Claude Opus 4.6",
+        bedrock_id: "anthropic.claude-opus-4-6-v1",
+        context_tokens: 200_000,
+        output_tokens: 128_000,
+        anthropic_id: "claude-opus-4-6",
         default_inference_profile: InferenceProfile::Global
     }
 );
@@ -56,20 +92,8 @@ define_model!(
         display_name: "Claude Haiku 4.5",
         bedrock_id: "anthropic.claude-haiku-4-5-20251001-v1:0",
         context_tokens: 200_000,
-        output_tokens: 8_192,
+        output_tokens: 64_000,
         anthropic_id: "claude-haiku-4-5-20251001",
-        default_inference_profile: InferenceProfile::Global
-    }
-);
-
-define_model!(
-    /// Claude Opus 4.5 - Most capable Claude model
-    ClaudeOpus4_5 {
-        display_name: "Claude Opus 4.5",
-        bedrock_id: "anthropic.claude-opus-4-5-20251101-v1:0",
-        context_tokens: 200_000,
-        output_tokens: 32_000,
-        anthropic_id: "claude-opus-4-5-20251101",
         default_inference_profile: InferenceProfile::Global
     }
 );

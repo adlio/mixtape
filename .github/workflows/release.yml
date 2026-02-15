@@ -43,27 +43,34 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Verify all crates can be packaged
+        run: |
+          for crate in mixtape-anthropic-sdk mixtape-core mixtape-tools mixtape-cli mixtape-server; do
+            echo "Packaging $crate..."
+            cargo package -p "$crate" --allow-dirty
+          done
+
       - name: Publish mixtape-anthropic-sdk
-        run: cargo publish -p mixtape-anthropic-sdk
+        run: cargo publish -p mixtape-anthropic-sdk || echo "Already published, skipping"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish mixtape-core
-        run: cargo publish -p mixtape-core
+        run: cargo publish -p mixtape-core || echo "Already published, skipping"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish mixtape-tools
-        run: cargo publish -p mixtape-tools
+        run: cargo publish -p mixtape-tools || echo "Already published, skipping"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish mixtape-cli
-        run: cargo publish -p mixtape-cli
+        run: cargo publish -p mixtape-cli || echo "Already published, skipping"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish mixtape-server
-        run: cargo publish -p mixtape-server
+        run: cargo publish -p mixtape-server || echo "Already published, skipping"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -1,0 +1,25 @@
+[package]
+name = "cargo-mixtape"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "CLI for deploying mixtape agents to AWS Bedrock AgentCore"
+keywords = ["ai", "agents", "aws", "bedrock", "agentcore"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [".cargo-husky/", ".claude/", ".github/", ".idea/"]
+
+[[bin]]
+name = "cargo-mixtape"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+toml = "0.8"
+
+[dev-dependencies]
+cargo-husky.workspace = true

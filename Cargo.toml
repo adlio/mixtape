@@ -1,5 +1,5 @@
 [workspace]
-members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli", "mixtape-server"]
+members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli", "mixtape-server", "cargo-mixtape"]
 resolver = "2"
 
 [workspace.package]

@@ -26,33 +26,31 @@
 //!
 //! # Deploy to AgentCore
 //!
-//! Use the Makefile to deploy infrastructure (CloudFormation) and the agent
-//! runtime in a single command:
+//! Install the deploy CLI and run it from your project root:
 //!
 //! ```sh
-//! # From the mixtape-server/ directory:
-//! make deploy STACK_NAME=my-agent
+//! cargo install cargo-mixtape
+//! cargo mixtape deploy
 //! ```
 //!
-//! This will:
-//! 1. Deploy a CloudFormation stack (ECR repository + IAM role)
-//! 2. Build an ARM64 Docker image
-//! 3. Push the image to ECR
-//! 4. Create or update the AgentCore runtime
+//! Configure in your Cargo.toml:
 //!
-//! To deploy a custom binary instead of this example:
-//! ```sh
-//! make deploy STACK_NAME=my-agent BINARY=my_custom_agent
+//! ```toml
+//! [package.metadata.mixtape]
+//! agent-name = "my-agent"
+//! region = "us-west-2"
 //! ```
 //!
-//! Check deployment status:
+//! Or pass options directly:
 //! ```sh
-//! make status STACK_NAME=my-agent
+//! cargo mixtape deploy --name my-agent --region us-west-2
 //! ```
 //!
-//! Tear down everything:
+//! Other commands:
 //! ```sh
-//! make clean STACK_NAME=my-agent
+//! cargo mixtape local              # build and run locally
+//! cargo mixtape status             # check deployment status
+//! cargo mixtape destroy            # tear down everything
 //! ```
 
 use mixtape_core::{Agent, ClaudeHaiku4_5};

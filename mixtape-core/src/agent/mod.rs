@@ -29,12 +29,13 @@ pub use types::{
 pub use types::SessionInfo;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 
 use crate::conversation::BoxedConversationManager;
-use crate::events::{AgentEvent, AgentHook};
+use crate::events::{AgentEvent, AgentHook, HookId};
 use crate::permission::{AuthorizationResponse, ToolCallAuthorizer};
 use crate::provider::ModelProvider;
 use crate::tool::DynTool;
@@ -68,7 +69,8 @@ pub struct Agent {
     pub(super) system_prompt: Option<String>,
     pub(super) max_concurrent_tools: usize,
     pub(super) tools: Vec<Box<dyn DynTool>>,
-    pub(super) hooks: Arc<parking_lot::RwLock<Vec<Arc<dyn AgentHook>>>>,
+    pub(super) hooks: Arc<parking_lot::RwLock<HashMap<HookId, Arc<dyn AgentHook>>>>,
+    pub(super) next_hook_id: AtomicU64,
     /// Tool call authorizer (always present, uses MemoryGrantStore by default)
     pub(super) authorizer: Arc<RwLock<ToolCallAuthorizer>>,
     /// Timeout for authorization requests
@@ -95,7 +97,9 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Add an event hook to observe agent execution
+    /// Add an event hook to observe agent execution.
+    ///
+    /// Returns a [`HookId`] that can be used to remove the hook later via [`remove_hook`](Self::remove_hook).
     ///
     /// Hooks receive notifications about agent lifecycle, model calls,
     /// and tool executions in real-time.
@@ -116,16 +120,28 @@ impl Agent {
     ///     .bedrock(ClaudeSonnet4_5)
     ///     .build()
     ///     .await?;
-    /// agent.add_hook(Logger);
+    /// let hook_id = agent.add_hook(Logger);
+    ///
+    /// // Later, remove the hook
+    /// agent.remove_hook(hook_id);
     /// ```
-    pub fn add_hook(&self, hook: impl AgentHook + 'static) {
-        self.hooks.write().push(Arc::new(hook));
+    pub fn add_hook(&self, hook: impl AgentHook + 'static) -> HookId {
+        let id = HookId(self.next_hook_id.fetch_add(1, Ordering::SeqCst));
+        self.hooks.write().insert(id, Arc::new(hook));
+        id
+    }
+
+    /// Remove a previously registered hook.
+    ///
+    /// Returns `true` if the hook was found and removed, `false` otherwise.
+    pub fn remove_hook(&self, id: HookId) -> bool {
+        self.hooks.write().remove(&id).is_some()
     }
 
     /// Emit an event to all registered hooks
     pub(crate) fn emit_event(&self, event: AgentEvent) {
         let hooks = self.hooks.read();
-        for hook in hooks.iter() {
+        for hook in hooks.values() {
             hook.on_event(&event);
         }
     }

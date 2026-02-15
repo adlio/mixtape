@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help test coverage coverage-html build build-release clean fmt fmt-check lint check doc doc-check all ci ensure-tools
+.PHONY: help test coverage coverage-html coverage-ci build build-release clean fmt fmt-check clippy clippy-fix lint check doc doc-check all ci ensure-tools
 
 # Tool installation helpers
 CARGO_NEXTEST := $(shell command -v cargo-nextest 2>/dev/null)
@@ -31,6 +31,9 @@ coverage: ensure-tools ## Show coverage summary in console
 coverage-html: ensure-tools ## Generate HTML coverage report and open
 	cargo llvm-cov nextest --workspace --all-features --html --open
 
+coverage-ci: ensure-tools ## Generate LCOV coverage for CI upload
+	cargo llvm-cov nextest --workspace --all-features --lcov --output-path lcov.info
+
 build: ## Build debug
 	cargo build --workspace --all-targets --all-features
 
@@ -49,8 +52,13 @@ fmt: ## Format code
 fmt-check: ## Check formatting
 	cargo fmt --all -- --check
 
-lint: ## Run clippy
+clippy: ## Run clippy with warnings as errors
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+clippy-fix: ## Run clippy and auto-fix
+	cargo clippy --workspace --all-targets --all-features --fix --allow-dirty -- -D warnings
+
+lint: clippy ## Alias for clippy
 
 clean: ## Clean build artifacts
 	cargo clean
@@ -61,6 +69,6 @@ doc: ## Generate docs
 doc-check: ## Check docs build without warnings
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-all: ensure-tools fmt lint build test ## Format, lint, build, and test
+all: ensure-tools fmt clippy build test ## Format, lint, build, and test
 
-ci: ensure-tools fmt-check lint build doc-check test ## Check formatting, lint, build, docs, test (for CI/hooks)
+ci: ensure-tools fmt-check clippy build doc-check test ## Check formatting, lint, build, docs, test (for CI/hooks)

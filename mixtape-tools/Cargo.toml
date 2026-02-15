@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "Ready-to-use tool implementations for the mixtape agent framework"
 documentation = "https://docs.rs/mixtape-tools"
 readme = "README.md"
 keywords = ["ai", "agents", "tools", "filesystem", "llm"]
 categories = ["development-tools", "filesystem", "asynchronous"]
+exclude = [".cargo-husky/", ".claude/", ".github/", ".idea/"]
 
 [features]
 default = ["filesystem", "process", "edit", "search", "fetch", "aws", "sqlite"]

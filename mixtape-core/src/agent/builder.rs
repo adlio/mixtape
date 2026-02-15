@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -559,7 +560,8 @@ impl AgentBuilder {
             system_prompt: self.system_prompt,
             max_concurrent_tools: self.max_concurrent_tools,
             tools: self.tools,
-            hooks: Arc::new(parking_lot::RwLock::new(Vec::new())),
+            hooks: Arc::new(parking_lot::RwLock::new(HashMap::new())),
+            next_hook_id: AtomicU64::new(0),
             authorizer: Arc::new(RwLock::new(authorizer)),
             authorization_timeout: self.authorization_timeout,
             pending_authorizations: Arc::new(RwLock::new(HashMap::new())),

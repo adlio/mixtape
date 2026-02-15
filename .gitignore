@@ -1,6 +1,10 @@
 /target
 Cargo.lock
 
+# Rust artifacts
+**/*.rs.bk
+*.pdb
+
 # IDE
 .idea/
 .vscode/
@@ -15,3 +19,6 @@ Cargo.lock
 *.profraw
 *.profdata
 lcov.info
+
+# cargo-mutants artifacts
+**/mutants.out*/

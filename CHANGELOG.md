@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **mixtape-server** *(experimental)*: HTTP server with AG-UI protocol support. API surface may change in future releases.
 - Claude Opus 4.6 model (flagship, 200K context, 128K output)
 - Claude Opus 4.1 model (200K context, 32K output)
 - Nova 2 Sonic model (1M context, 65K output)
@@ -38,6 +39,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude Opus 4.5 output token limit: 32,000 → 64,000
 - Stale `--providers` CLI flag in model_verification example docs (correct flag is `--vendors`)
 
+## [0.2.1] - 2026-01-05
+
+### Fixed
+
+- Use i64 for rusqlite in session store for cross-platform compatibility
+- Use i64 for rusqlite COUNT queries for cross-platform compatibility
+
+## [0.2.0] - 2026-01-05
+
+### Added
+
+- Claude Sonnet 4.5 1M model support
+- Tool grouping exports for filesystem and process modules
+- `builder.add_trusted_tool()` convenience method
+- Animated spinner for thinking indicator in CLI
+- Improved tool execution event model for approval
+
+### Changed
+
+- Updated non-interactive examples to use `add_trusted_tool()`
+
 ## [0.1.1] - 2026-01-04
 
 ### Added
@@ -59,5 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **mixtape-cli**: Session storage and REPL utilities for interactive agents
 
 [Unreleased]: https://github.com/adlio/mixtape/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/adlio/mixtape/compare/v0.1.1...v0.3.0
+[0.3.0]: https://github.com/adlio/mixtape/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/adlio/mixtape/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/adlio/mixtape/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/adlio/mixtape/releases/tag/v0.1.1

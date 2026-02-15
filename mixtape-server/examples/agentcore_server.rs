@@ -26,33 +26,34 @@
 //!
 //! # Deploy to AgentCore
 //!
-//! 1. Build the ARM64 Docker image:
-//!    ```sh
-//!    docker buildx build --platform linux/arm64 \
-//!      -t <account>.dkr.ecr.<region>.amazonaws.com/my-agent:latest \
-//!      --push -f Dockerfile.agentcore .
-//!    ```
+//! Use the Makefile to deploy infrastructure (CloudFormation) and the agent
+//! runtime in a single command:
 //!
-//! 2. Create an AgentCore runtime:
-//!    ```sh
-//!    aws bedrock-agentcore-control create-agent-runtime \
-//!      --agent-runtime-name my-mixtape-agent \
-//!      --agent-runtime-artifact '{
-//!        "containerConfiguration": {
-//!          "containerUri": "<account>.dkr.ecr.<region>.amazonaws.com/my-agent:latest"
-//!        }
-//!      }' \
-//!      --network-configuration '{"networkMode": "PUBLIC"}' \
-//!      --role-arn arn:aws:iam::<account>:role/AgentCoreExecutionRole
-//!    ```
+//! ```sh
+//! # From the mixtape-server/ directory:
+//! make deploy STACK_NAME=my-agent
+//! ```
 //!
-//! 3. Invoke remotely:
-//!    ```sh
-//!    aws bedrock-agentcore invoke-agent-runtime \
-//!      --agent-runtime-arn <arn> \
-//!      --payload '{"prompt": "Hello!"}' \
-//!      --content-type application/json
-//!    ```
+//! This will:
+//! 1. Deploy a CloudFormation stack (ECR repository + IAM role)
+//! 2. Build an ARM64 Docker image
+//! 3. Push the image to ECR
+//! 4. Create or update the AgentCore runtime
+//!
+//! To deploy a custom binary instead of this example:
+//! ```sh
+//! make deploy STACK_NAME=my-agent BINARY=my_custom_agent
+//! ```
+//!
+//! Check deployment status:
+//! ```sh
+//! make status STACK_NAME=my-agent
+//! ```
+//!
+//! Tear down everything:
+//! ```sh
+//! make clean STACK_NAME=my-agent
+//! ```
 
 use mixtape_core::{Agent, ClaudeHaiku4_5};
 use mixtape_server::MixtapeRouter;

@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Infrastructure for deploying a mixtape agent to AWS Bedrock AgentCore.
+  Creates an ECR repository for container images and an IAM role for the
+  AgentCore runtime.
+
+  Deploy with:
+    aws cloudformation deploy \
+      --template-file agentcore-stack.yaml \
+      --stack-name my-agent \
+      --parameter-overrides AgentName=my-agent \
+      --capabilities CAPABILITY_NAMED_IAM
+
+  Or use the Makefile:
+    make deploy STACK_NAME=my-agent
+
+Parameters:
+  AgentName:
+    Type: String
+    Default: mixtape-agent
+    Description: >
+      Name used for the ECR repository, IAM role, and AgentCore runtime.
+      Must be lowercase alphanumeric with hyphens.
+    AllowedPattern: ^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$
+    ConstraintDescription: >
+      Must be 2-64 characters, lowercase alphanumeric and hyphens only,
+      cannot start or end with a hyphen.
+
+  MaxImageCount:
+    Type: Number
+    Default: 10
+    Description: >
+      Maximum number of container images to retain in ECR.
+      Older untagged images are automatically cleaned up.
+
+Resources:
+  # ECR repository for the agent container image.
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Ref AgentName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: !Sub |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last ${MaxImageCount} images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": ${MaxImageCount}
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+  # IAM role assumed by the AgentCore runtime.
+  # Add additional policies below for tools your agent needs access to
+  # (e.g., S3, DynamoDB, Secrets Manager).
+  AgentCoreRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${AgentName}-agentcore-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Allows the agent to call Bedrock models (Claude, etc.)
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+      Tags:
+        - Key: ManagedBy
+          Value: mixtape
+        - Key: AgentName
+          Value: !Ref AgentName
+
+Outputs:
+  EcrRepositoryUri:
+    Description: ECR repository URI for pushing agent images
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export:
+      Name: !Sub ${AWS::StackName}-EcrUri
+
+  AgentCoreRoleArn:
+    Description: IAM role ARN for the AgentCore runtime
+    Value: !GetAtt AgentCoreRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-RoleArn
+
+  AgentName:
+    Description: Agent runtime name
+    Value: !Ref AgentName

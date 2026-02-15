@@ -31,6 +31,8 @@ pub struct MixtapeRouter {
     agui_path: Option<String>,
     #[cfg(feature = "agui")]
     interrupt_path: Option<String>,
+    #[cfg(feature = "agentcore")]
+    agentcore_enabled: bool,
 }
 
 impl MixtapeRouter {
@@ -44,6 +46,8 @@ impl MixtapeRouter {
             agui_path: None,
             #[cfg(feature = "agui")]
             interrupt_path: None,
+            #[cfg(feature = "agentcore")]
+            agentcore_enabled: false,
         }
     }
 
@@ -57,6 +61,8 @@ impl MixtapeRouter {
             agui_path: None,
             #[cfg(feature = "agui")]
             interrupt_path: None,
+            #[cfg(feature = "agentcore")]
+            agentcore_enabled: false,
         }
     }
 
@@ -112,6 +118,38 @@ impl MixtapeRouter {
         self
     }
 
+    /// Enable AWS Bedrock AgentCore runtime endpoints.
+    ///
+    /// Registers the standard AgentCore protocol endpoints:
+    /// - `GET /ping` - Health check
+    /// - `POST /invocations` - Agent execution (returns SSE stream)
+    ///
+    /// The agent should be configured with all tools trusted (no interactive
+    /// permissions) since AgentCore runs agents headlessly.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use mixtape_server::MixtapeRouter;
+    /// # use mixtape_core::Agent;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let agent: Agent = todo!();
+    /// let app = MixtapeRouter::new(agent)
+    ///     .with_agentcore()
+    ///     .build()?;
+    ///
+    /// // AgentCore expects port 8080
+    /// let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
+    /// axum::serve(listener, app).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "agentcore")]
+    pub fn with_agentcore(mut self) -> Self {
+        self.agentcore_enabled = true;
+        self
+    }
+
     /// Build the router with all configured endpoints.
     ///
     /// Returns an axum `Router` that can be served directly or merged
@@ -120,13 +158,20 @@ impl MixtapeRouter {
     /// # Errors
     ///
     /// Returns [`BuildError::NoEndpoints`] if no endpoints were configured.
-    /// Call `.with_agui()` before `.build()`.
+    /// Call `.with_agui()` or `.with_agentcore()` before `.build()`.
     pub fn build(self) -> Result<Router, BuildError> {
         // Validate that at least one endpoint is configured
+        let mut has_endpoints = false;
+
         #[cfg(feature = "agui")]
-        let has_endpoints = self.agui_path.is_some();
-        #[cfg(not(feature = "agui"))]
-        let has_endpoints = false;
+        if self.agui_path.is_some() {
+            has_endpoints = true;
+        }
+
+        #[cfg(feature = "agentcore")]
+        if self.agentcore_enabled {
+            has_endpoints = true;
+        }
 
         if !has_endpoints {
             return Err(BuildError::NoEndpoints);
@@ -146,6 +191,17 @@ impl MixtapeRouter {
             if let Some(interrupt_path) = self.interrupt_path {
                 router = router.route(&interrupt_path, post(interrupt_handler));
             }
+        }
+
+        // Add AgentCore endpoints if enabled
+        #[cfg(feature = "agentcore")]
+        if self.agentcore_enabled {
+            use crate::agentcore::handler::{invocations_handler, ping_handler};
+            use axum::routing::{get, post};
+
+            router = router
+                .route("/ping", get(ping_handler))
+                .route("/invocations", post(invocations_handler));
         }
 
         Ok(router.with_state(state))

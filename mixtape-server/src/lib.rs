@@ -36,6 +36,9 @@ pub(crate) mod state;
 #[cfg(feature = "agui")]
 pub(crate) mod agui;
 
+#[cfg(feature = "agentcore")]
+pub(crate) mod agentcore;
+
 // Re-exports
 pub use error::{BuildError, ServerError, ServerResult};
 pub use router::MixtapeRouter;
@@ -45,3 +48,7 @@ pub use router::MixtapeRouter;
 pub use agui::events::{
     AguiEvent, GrantScope, InterruptData, InterruptResponse, InterruptType, MessageRole,
 };
+
+// AgentCore protocol types
+#[cfg(feature = "agentcore")]
+pub use agentcore::events::{AgentCoreEvent, InvocationRequest, PingResponse};

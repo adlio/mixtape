@@ -110,11 +110,42 @@ fn test_app_state_construction() {
     let _ = _from_arc;
 }
 
+#[cfg(feature = "agentcore")]
+#[test]
+fn test_router_with_agentcore_fluent_api() {
+    use crate::error::BuildError;
+
+    fn _test_chaining<F>(f: F)
+    where
+        F: FnOnce(MixtapeRouter) -> Result<axum::Router, BuildError>,
+    {
+        drop(f);
+    }
+
+    _test_chaining(|builder| builder.with_agentcore().build());
+}
+
+#[cfg(feature = "agentcore")]
+#[test]
+fn test_router_with_agentcore_consumes_self() {
+    fn _consume_builder<F>(f: F)
+    where
+        F: FnOnce(MixtapeRouter),
+    {
+        drop(f);
+    }
+
+    _consume_builder(|router| {
+        let _app = router.with_agentcore().build();
+    });
+}
+
 // Note: The following tests would require actual Agent instances:
 // - test_router_new_wraps_agent_in_arc
 // - test_router_from_arc
 // - test_router_build_empty
 // - test_router_with_agui_*
+// - test_router_with_agentcore_*
 // - test_router_build_nested_*
 //
 // These would be better suited for integration tests with proper async setup.

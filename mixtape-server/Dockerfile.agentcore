@@ -1,0 +1,66 @@
+# Dockerfile for deploying a mixtape agent to AWS Bedrock AgentCore.
+#
+# AgentCore requires ARM64 containers that expose port 8080 with:
+#   GET  /ping         -> {"status": "Healthy", "time_of_last_update": <ts>}
+#   POST /invocations  -> SSE stream of agent events
+#
+# Usage:
+#   # Build and push to ECR
+#   docker buildx build --platform linux/arm64 \
+#     -t <account>.dkr.ecr.<region>.amazonaws.com/my-agent:latest \
+#     --push -f mixtape-server/Dockerfile.agentcore .
+#
+#   # Or build locally for testing
+#   docker build -f mixtape-server/Dockerfile.agentcore -t my-agent .
+#   docker run -p 8080:8080 -e AWS_REGION=us-west-2 my-agent
+#
+# Customize:
+#   - Change BINARY_NAME to match your agent binary
+#   - Add environment variables for configuration
+#   - Add COPY directives for context files or static assets
+
+# -------------------------------------------------------------------
+# Build stage: compile the Rust binary
+# -------------------------------------------------------------------
+FROM --platform=linux/arm64 rust:1.83-slim-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY mixtape-core/ mixtape-core/
+COPY mixtape-anthropic-sdk/ mixtape-anthropic-sdk/
+COPY mixtape-tools/ mixtape-tools/
+COPY mixtape-cli/ mixtape-cli/
+COPY mixtape-server/ mixtape-server/
+
+# Build the agentcore_server example in release mode.
+# Replace this with your own binary target if you have a custom agent.
+ARG BINARY_NAME=agentcore_server
+RUN cargo build --release -p mixtape-server --example ${BINARY_NAME} --features agentcore
+
+# -------------------------------------------------------------------
+# Runtime stage: minimal image with just the binary
+# -------------------------------------------------------------------
+FROM --platform=linux/arm64 debian:bookworm-slim
+
+# Install runtime dependencies (CA certs for HTTPS to AWS APIs)
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the compiled binary
+ARG BINARY_NAME=agentcore_server
+COPY --from=builder /app/target/release/examples/${BINARY_NAME} /usr/local/bin/agent
+
+# AgentCore expects port 8080
+EXPOSE 8080
+
+# Run the agent server
+CMD ["agent"]

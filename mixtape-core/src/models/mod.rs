@@ -161,6 +161,7 @@ mod tests {
             &ClaudeOpus4,
             &ClaudeSonnet4,
             &ClaudeSonnet4_5,
+            &ClaudeSonnet4_6,
             &ClaudeHaiku4_5,
             &ClaudeOpus4_5,
             &NovaMicro,

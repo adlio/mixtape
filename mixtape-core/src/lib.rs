@@ -185,6 +185,7 @@ pub use models::{
     ClaudeOpus4_5,
     ClaudeSonnet4,
     ClaudeSonnet4_5,
+    ClaudeSonnet4_6,
     // Cohere
     CohereCommandRPlus,
     // DeepSeek

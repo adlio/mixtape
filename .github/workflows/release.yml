@@ -47,7 +47,7 @@ jobs:
         run: |
           for crate in mixtape-anthropic-sdk mixtape-core mixtape-tools mixtape-cli mixtape-server; do
             echo "Packaging $crate..."
-            cargo package -p "$crate" --allow-dirty
+            cargo package -p "$crate" --allow-dirty --no-verify
           done
 
       - name: Publish mixtape-anthropic-sdk

@@ -32,11 +32,18 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes "${{ steps.changelog.outputs.notes }}"
+          if gh release view "$GITHUB_REF_NAME" &>/dev/null; then
+            echo "Release $GITHUB_REF_NAME already exists, updating..."
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "${{ steps.changelog.outputs.notes }}"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "${{ steps.changelog.outputs.notes }}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

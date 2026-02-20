@@ -61,3 +61,13 @@ define_model!(
         output_tokens: 8_192
     }
 );
+
+define_model!(
+    /// Qwen3 Coder Next - Lightweight coding model with 65K output window
+    Qwen3CoderNext {
+        display_name: "Qwen3 Coder Next",
+        bedrock_id: "qwen.qwen3-coder-next",
+        context_tokens: 262_144,
+        output_tokens: 65_536
+    }
+);

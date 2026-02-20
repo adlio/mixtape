@@ -6,21 +6,25 @@
 //!
 //! Models are organized by vendor:
 //! - `claude` - Anthropic Claude models
-//! - `llama` - Meta Llama models
-//! - `nova` - Amazon Nova models
-//! - `mistral` - Mistral AI models
 //! - `cohere` - Cohere models
-//! - `qwen` - Alibaba Qwen models
-//! - `google` - Google models
 //! - `deepseek` - DeepSeek models
+//! - `glm` - Z.AI GLM models
+//! - `google` - Google models
 //! - `kimi` - Moonshot Kimi models
+//! - `llama` - Meta Llama models
+//! - `minimax` - MiniMax models
+//! - `mistral` - Mistral AI models
+//! - `nova` - Amazon Nova models
+//! - `qwen` - Alibaba Qwen models
 
 mod claude;
 mod cohere;
 mod deepseek;
+mod glm;
 mod google;
 mod kimi;
 mod llama;
+mod minimax;
 mod mistral;
 mod nova;
 mod qwen;
@@ -29,9 +33,11 @@ mod qwen;
 pub use claude::*;
 pub use cohere::*;
 pub use deepseek::*;
+pub use glm::*;
 pub use google::*;
 pub use kimi::*;
 pub use llama::*;
+pub use minimax::*;
 pub use mistral::*;
 pub use nova::*;
 pub use qwen::*;
@@ -186,6 +192,9 @@ mod tests {
             &Qwen3Coder30B,
             &Qwen3Next80B,
             &Qwen3VL235B,
+            &Qwen3CoderNext,
+            &GLM4_7,
+            &GLM4_7Flash,
             &Gemma3_27B,
             &Gemma3_12B,
             &Gemma3_4B,
@@ -194,6 +203,7 @@ mod tests {
             &DeepSeekV3_2,
             &KimiK2Thinking,
             &KimiK2_5,
+            &MiniMaxM2_1,
             &Llama4Scout17B,
             &Llama4Maverick17B,
             &Llama3_3_70B,

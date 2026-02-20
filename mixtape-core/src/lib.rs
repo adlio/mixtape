@@ -193,6 +193,8 @@ pub use models::{Nova2Lite, Nova2Sonic, NovaLite, NovaMicro, NovaPremier, NovaPr
 pub use models::CohereCommandRPlus;
 // DeepSeek
 pub use models::{DeepSeekR1, DeepSeekV3_1, DeepSeekV3_2};
+// Z.AI GLM
+pub use models::{GLM4_7Flash, GLM4_7};
 // Google
 pub use models::{Gemma3_12B, Gemma3_27B, Gemma3_4B};
 // Meta Llama
@@ -200,6 +202,8 @@ pub use models::{
     Llama3_1_405B, Llama3_1_70B, Llama3_1_8B, Llama3_2_11B, Llama3_2_1B, Llama3_2_3B, Llama3_2_90B,
     Llama3_3_70B, Llama4Maverick17B, Llama4Scout17B,
 };
+// MiniMax
+pub use models::MiniMaxM2_1;
 // Mistral
 pub use models::{
     MagistralSmall, Ministral14B, Ministral3B, Ministral8B, MistralLarge3, PixtralLarge,
@@ -208,7 +212,9 @@ pub use models::{
 // Moonshot Kimi
 pub use models::{KimiK2Thinking, KimiK2_5};
 // Alibaba Qwen
-pub use models::{Qwen3Coder30B, Qwen3Coder480B, Qwen3Next80B, Qwen3VL235B, Qwen3_235B, Qwen3_32B};
+pub use models::{
+    Qwen3Coder30B, Qwen3Coder480B, Qwen3CoderNext, Qwen3Next80B, Qwen3VL235B, Qwen3_235B, Qwen3_32B,
+};
 
 pub use tokenizer::CharacterTokenizer;
 pub use tool::{box_tool, DocumentFormat, DynTool, ImageFormat, Tool, ToolError, ToolResult};

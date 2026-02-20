@@ -75,6 +75,18 @@ define_model!(
 );
 
 define_model!(
+    /// Claude Sonnet 4.6 - Most capable Sonnet with 1M context beta
+    ClaudeSonnet4_6 {
+        display_name: "Claude Sonnet 4.6",
+        bedrock_id: "anthropic.claude-sonnet-4-6",
+        context_tokens: 200_000,
+        output_tokens: 64_000,
+        anthropic_id: "claude-sonnet-4-6",
+        default_inference_profile: InferenceProfile::Global
+    }
+);
+
+define_model!(
     /// Claude Sonnet 4.5 - Latest Sonnet with improved capabilities
     ClaudeSonnet4_5 {
         display_name: "Claude Sonnet 4.5",

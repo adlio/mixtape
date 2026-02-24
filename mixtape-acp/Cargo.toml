@@ -1,0 +1,38 @@
+[package]
+name = "mixtape-acp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "ACP (Agent Client Protocol) adapter for the mixtape agent framework"
+documentation = "https://docs.rs/mixtape-acp"
+readme = "../README.md"
+keywords = ["ai", "agents", "acp", "editor", "coding"]
+categories = ["development-tools", "api-bindings", "asynchronous"]
+exclude = [".cargo-husky/", ".claude/", ".github/", ".idea/"]
+
+[dependencies]
+mixtape-core.workspace = true
+agent-client-protocol.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+async-trait.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+mixtape-core = { workspace = true, features = ["test-utils", "bedrock"] }
+tokio-test.workspace = true
+cargo-husky.workspace = true
+
+[[example]]
+name = "echo_agent"
+
+[[example]]
+name = "echo_agent_bedrock"

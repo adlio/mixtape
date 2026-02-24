@@ -1,5 +1,5 @@
 [workspace]
-members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli", "mixtape-server"]
+members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cli", "mixtape-server", "mixtape-acp"]
 resolver = "2"
 
 [workspace.package]
@@ -16,6 +16,7 @@ mixtape-anthropic-sdk = { version = "0.3.1", path = "./mixtape-anthropic-sdk" }
 mixtape-tools = { path = "./mixtape-tools" }
 mixtape-cli = { path = "./mixtape-cli" }
 mixtape-server = { path = "./mixtape-server" }
+mixtape-acp = { path = "./mixtape-acp" }
 
 # Async runtime
 tokio = { version = "1.41", features = ["full"] }
@@ -24,6 +25,8 @@ tokio-stream = "0.1"
 async-trait = "0.1"
 async-stream = "0.3"
 futures = "0.3"
+agent-client-protocol = "0.9"
+tokio-util = { version = "0.7", features = ["compat"] }
 
 # HTTP Server
 axum = { version = "0.7", features = ["macros"] }
@@ -73,6 +76,7 @@ regex = "1.10"
 url = "2.5"
 http = "1.1"
 shellexpand = "3.1"
+log = "0.4"
 
 # MCP
 rmcp = { version = "0.11", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }

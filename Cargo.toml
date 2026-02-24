@@ -3,7 +3,7 @@ members = ["mixtape-core", "mixtape-anthropic-sdk", "mixtape-tools", "mixtape-cl
 resolver = "2"
 
 [workspace.package]
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 homepage = "https://github.com/adlio/mixtape"
@@ -11,8 +11,8 @@ repository = "https://github.com/adlio/mixtape"
 
 [workspace.dependencies]
 # Internal crates
-mixtape-core = { version = "0.3.1", path = "./mixtape-core" }
-mixtape-anthropic-sdk = { version = "0.3.1", path = "./mixtape-anthropic-sdk" }
+mixtape-core = { version = "0.4.0", path = "./mixtape-core" }
+mixtape-anthropic-sdk = { version = "0.4.0", path = "./mixtape-anthropic-sdk" }
 mixtape-tools = { path = "./mixtape-tools" }
 mixtape-cli = { path = "./mixtape-cli" }
 mixtape-server = { path = "./mixtape-server" }
@@ -33,7 +33,7 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-schemars = "0.8"
+schemars = "1.2"
 
 # Error handling
 thiserror = "1.0"

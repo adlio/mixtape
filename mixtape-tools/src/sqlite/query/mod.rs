@@ -5,7 +5,7 @@ mod read;
 mod schema;
 mod write;
 
-pub use bulk_insert::BulkInsertTool;
-pub use read::ReadQueryTool;
-pub use schema::SchemaQueryTool;
-pub use write::WriteQueryTool;
+pub use bulk_insert::{BulkInsertInput, BulkInsertTool};
+pub use read::{ReadQueryInput, ReadQueryTool};
+pub use schema::{SchemaQueryInput, SchemaQueryTool};
+pub use write::{WriteQueryInput, WriteQueryTool};

@@ -101,3 +101,13 @@ define_model!(
         output_tokens: 8_192
     }
 );
+
+define_model!(
+    /// Devstral 2 135B - Code-focused instruction model
+    Devstral2_135B {
+        display_name: "Devstral 2 135B",
+        bedrock_id: "mistral.devstral-2-135b-instruct",
+        context_tokens: 256_000,
+        output_tokens: 8_192
+    }
+);

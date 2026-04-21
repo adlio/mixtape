@@ -16,6 +16,8 @@
 //! - `minimax` - MiniMax models
 //! - `mistral` - Mistral AI models
 //! - `nova` - Amazon Nova models
+//! - `nvidia` - NVIDIA Nemotron models
+//! - `openai` - OpenAI GPT-OSS models
 //! - `qwen` - Alibaba Qwen models
 //! - `titan` - Amazon Titan Text models
 //! - `writer` - Writer AI Palmyra models
@@ -31,6 +33,8 @@ mod llama;
 mod minimax;
 mod mistral;
 mod nova;
+mod nvidia;
+mod openai;
 mod qwen;
 mod titan;
 mod writer;
@@ -47,6 +51,8 @@ pub use llama::*;
 pub use minimax::*;
 pub use mistral::*;
 pub use nova::*;
+pub use nvidia::*;
+pub use openai::*;
 pub use qwen::*;
 pub use titan::*;
 pub use writer::*;
@@ -210,6 +216,7 @@ mod tests {
             &PixtralLarge,
             &VoxtralMini3B,
             &VoxtralSmall24B,
+            &Devstral2_135B,
             // Cohere
             &CohereCommandR,
             &CohereCommandRPlus,
@@ -222,9 +229,20 @@ mod tests {
             &Qwen3Next80B,
             &Qwen3VL235B,
             &Qwen3CoderNext,
+            // NVIDIA
+            &NemotronNano2,
+            &NemotronNano2VL,
+            &Nemotron3Nano30BA3B,
+            &Nemotron3Super120BA12B,
+            // OpenAI
+            &GptOss20B,
+            &GptOss120B,
+            &GptOssSafeguard20B,
+            &GptOssSafeguard120B,
             // Z.AI GLM
             &GLM4_7,
             &GLM4_7Flash,
+            &GLM5,
             // Google
             &Gemma3_27B,
             &Gemma3_12B,
@@ -238,6 +256,8 @@ mod tests {
             &KimiK2_5,
             // MiniMax
             &MiniMaxM2_1,
+            &MiniMaxM2,
+            &MiniMaxM2_5,
             // Meta Llama
             &Llama4Scout17B,
             &Llama4Maverick17B,
@@ -254,6 +274,7 @@ mod tests {
             // Writer
             &WriterPalmyraX4,
             &WriterPalmyraX5,
+            &WriterPalmyraVision7B,
             // AI21
             &AI21Jamba1_5Large,
             &AI21Jamba1_5Mini,

@@ -21,3 +21,13 @@ define_model!(
         output_tokens: 8_192
     }
 );
+
+define_model!(
+    /// Palmyra Vision 7B - Vision-language model from Writer
+    WriterPalmyraVision7B {
+        display_name: "Palmyra Vision 7B",
+        bedrock_id: "writer.palmyra-vision-7b-v1:0",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);

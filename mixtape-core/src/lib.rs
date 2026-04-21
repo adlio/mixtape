@@ -199,7 +199,7 @@ pub use models::{CohereCommandR, CohereCommandRPlus, CohereCommandRPlusV2};
 // DeepSeek
 pub use models::{DeepSeekR1, DeepSeekV3_1, DeepSeekV3_2};
 // Z.AI GLM
-pub use models::{GLM4_7Flash, GLM4_7};
+pub use models::{GLM4_7Flash, GLM4_7, GLM5};
 // Google
 pub use models::{Gemma3_12B, Gemma3_27B, Gemma3_4B};
 // Meta Llama
@@ -208,20 +208,24 @@ pub use models::{
     Llama3_3_70B, Llama3_70B, Llama3_8B, Llama4Maverick17B, Llama4Scout17B,
 };
 // MiniMax
-pub use models::MiniMaxM2_1;
+pub use models::{MiniMaxM2, MiniMaxM2_1, MiniMaxM2_5};
 // Mistral
 pub use models::{
-    MagistralSmall, Ministral14B, Ministral3B, Ministral8B, MistralLarge2, MistralLarge3,
-    MistralSmall, PixtralLarge, VoxtralMini3B, VoxtralSmall24B,
+    Devstral2_135B, MagistralSmall, Ministral14B, Ministral3B, Ministral8B, MistralLarge2,
+    MistralLarge3, MistralSmall, PixtralLarge, VoxtralMini3B, VoxtralSmall24B,
 };
 // Moonshot Kimi
 pub use models::{KimiK2Thinking, KimiK2_5};
+// NVIDIA
+pub use models::{Nemotron3Nano30BA3B, Nemotron3Super120BA12B, NemotronNano2, NemotronNano2VL};
+// OpenAI
+pub use models::{GptOss120B, GptOss20B, GptOssSafeguard120B, GptOssSafeguard20B};
 // Alibaba Qwen
 pub use models::{
     Qwen3Coder30B, Qwen3Coder480B, Qwen3CoderNext, Qwen3Next80B, Qwen3VL235B, Qwen3_235B, Qwen3_32B,
 };
 // Writer AI Palmyra
-pub use models::{WriterPalmyraX4, WriterPalmyraX5};
+pub use models::{WriterPalmyraVision7B, WriterPalmyraX4, WriterPalmyraX5};
 
 pub use tokenizer::CharacterTokenizer;
 pub use tool::{box_tool, DocumentFormat, DynTool, ImageFormat, Tool, ToolError, ToolResult};

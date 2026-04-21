@@ -184,13 +184,18 @@ pub use provider::BedrockProvider;
 
 // Anthropic Claude
 pub use models::{
+    Claude3Haiku, Claude3Opus, Claude3Sonnet, Claude3_5Haiku, Claude3_5SonnetV1, Claude3_5SonnetV2,
     Claude3_7Sonnet, ClaudeHaiku4_5, ClaudeOpus4, ClaudeOpus4_1, ClaudeOpus4_5, ClaudeOpus4_6,
     ClaudeSonnet4, ClaudeSonnet4_5, ClaudeSonnet4_6,
 };
 // Amazon Nova
 pub use models::{Nova2Lite, Nova2Sonic, NovaLite, NovaMicro, NovaPremier, NovaPro};
+// Amazon Titan
+pub use models::{TitanTextExpress, TitanTextLite, TitanTextPremier};
+// AI21 Labs
+pub use models::{AI21Jamba1_5Large, AI21Jamba1_5Mini, AI21JambaInstruct};
 // Cohere
-pub use models::CohereCommandRPlus;
+pub use models::{CohereCommandR, CohereCommandRPlus, CohereCommandRPlusV2};
 // DeepSeek
 pub use models::{DeepSeekR1, DeepSeekV3_1, DeepSeekV3_2};
 // Z.AI GLM
@@ -200,14 +205,14 @@ pub use models::{Gemma3_12B, Gemma3_27B, Gemma3_4B};
 // Meta Llama
 pub use models::{
     Llama3_1_405B, Llama3_1_70B, Llama3_1_8B, Llama3_2_11B, Llama3_2_1B, Llama3_2_3B, Llama3_2_90B,
-    Llama3_3_70B, Llama4Maverick17B, Llama4Scout17B,
+    Llama3_3_70B, Llama3_70B, Llama3_8B, Llama4Maverick17B, Llama4Scout17B,
 };
 // MiniMax
 pub use models::MiniMaxM2_1;
 // Mistral
 pub use models::{
-    MagistralSmall, Ministral14B, Ministral3B, Ministral8B, MistralLarge3, PixtralLarge,
-    VoxtralMini3B, VoxtralSmall24B,
+    MagistralSmall, Ministral14B, Ministral3B, Ministral8B, MistralLarge2, MistralLarge3,
+    MistralSmall, PixtralLarge, VoxtralMini3B, VoxtralSmall24B,
 };
 // Moonshot Kimi
 pub use models::{KimiK2Thinking, KimiK2_5};
@@ -215,6 +220,8 @@ pub use models::{KimiK2Thinking, KimiK2_5};
 pub use models::{
     Qwen3Coder30B, Qwen3Coder480B, Qwen3CoderNext, Qwen3Next80B, Qwen3VL235B, Qwen3_235B, Qwen3_32B,
 };
+// Writer AI Palmyra
+pub use models::{WriterPalmyraX4, WriterPalmyraX5};
 
 pub use tokenizer::CharacterTokenizer;
 pub use tool::{box_tool, DocumentFormat, DynTool, ImageFormat, Tool, ToolError, ToolResult};

@@ -85,6 +85,30 @@ define_model!(
 );
 
 // =============================================================================
+// Llama 3 Models
+// =============================================================================
+
+define_model!(
+    /// Llama 3 70B Instruct - Large instruction-tuned model
+    Llama3_70B {
+        display_name: "Llama 3 70B",
+        bedrock_id: "meta.llama3-70b-instruct-v1:0",
+        context_tokens: 8_000,
+        output_tokens: 2_048
+    }
+);
+
+define_model!(
+    /// Llama 3 8B Instruct - Compact instruction-tuned model
+    Llama3_8B {
+        display_name: "Llama 3 8B",
+        bedrock_id: "meta.llama3-8b-instruct-v1:0",
+        context_tokens: 8_000,
+        output_tokens: 2_048
+    }
+);
+
+// =============================================================================
 // Llama 3.1 Models
 // =============================================================================
 

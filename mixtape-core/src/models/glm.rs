@@ -21,3 +21,13 @@ define_model!(
         output_tokens: 131_072
     }
 );
+
+define_model!(
+    /// GLM 5 - Next-gen frontier model from Z.AI
+    GLM5 {
+        display_name: "GLM 5",
+        bedrock_id: "zai.glm-5",
+        context_tokens: 202_752,
+        output_tokens: 131_072
+    }
+);

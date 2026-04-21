@@ -134,7 +134,45 @@ struct ModelInfo {
 
 /// All available models for testing
 const MODELS: &[ModelInfo] = &[
-    // Anthropic Claude
+    // Anthropic Claude 3
+    ModelInfo {
+        key: "Claude3Haiku",
+        name: "Claude 3 Haiku",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Claude3Opus",
+        name: "Claude 3 Opus",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Claude3Sonnet",
+        name: "Claude 3 Sonnet",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    // Anthropic Claude 3.5
+    ModelInfo {
+        key: "Claude3_5Haiku",
+        name: "Claude 3.5 Haiku",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Claude3_5SonnetV1",
+        name: "Claude 3.5 Sonnet v1",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Claude3_5SonnetV2",
+        name: "Claude 3.5 Sonnet v2",
+        vendor: "anthropic",
+        supports_tools: true,
+    },
+    // Anthropic Claude 3.7+
     ModelInfo {
         key: "Claude3_7Sonnet",
         name: "Claude 3.7 Sonnet",
@@ -220,7 +258,38 @@ const MODELS: &[ModelInfo] = &[
         vendor: "amazon",
         supports_tools: true,
     },
+    // Amazon Titan
+    ModelInfo {
+        key: "TitanTextExpress",
+        name: "Titan Text Express",
+        vendor: "amazon",
+        supports_tools: false,
+    },
+    ModelInfo {
+        key: "TitanTextLite",
+        name: "Titan Text Lite",
+        vendor: "amazon",
+        supports_tools: false,
+    },
+    ModelInfo {
+        key: "TitanTextPremier",
+        name: "Titan Text Premier",
+        vendor: "amazon",
+        supports_tools: false,
+    },
     // Mistral
+    ModelInfo {
+        key: "MistralLarge2",
+        name: "Mistral Large 2",
+        vendor: "mistral",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "MistralSmall",
+        name: "Mistral Small",
+        vendor: "mistral",
+        supports_tools: true,
+    },
     ModelInfo {
         key: "MistralLarge3",
         name: "Mistral Large 3",
@@ -269,10 +338,28 @@ const MODELS: &[ModelInfo] = &[
         vendor: "mistral",
         supports_tools: true,
     },
+    ModelInfo {
+        key: "Devstral2_135B",
+        name: "Devstral 2 135B",
+        vendor: "mistral",
+        supports_tools: true,
+    },
     // Cohere
+    ModelInfo {
+        key: "CohereCommandR",
+        name: "Command R",
+        vendor: "cohere",
+        supports_tools: true,
+    },
     ModelInfo {
         key: "CohereCommandRPlus",
         name: "Command R+",
+        vendor: "cohere",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "CohereCommandRPlusV2",
+        name: "Command R+ v2",
         vendor: "cohere",
         supports_tools: true,
     },
@@ -364,6 +451,94 @@ const MODELS: &[ModelInfo] = &[
         vendor: "moonshot",
         supports_tools: true,
     },
+    // Z.AI GLM
+    ModelInfo {
+        key: "GLM4_7",
+        name: "GLM 4.7",
+        vendor: "zai",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "GLM4_7Flash",
+        name: "GLM 4.7 Flash",
+        vendor: "zai",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "GLM5",
+        name: "GLM 5",
+        vendor: "zai",
+        supports_tools: true,
+    },
+    // MiniMax
+    ModelInfo {
+        key: "MiniMaxM2_1",
+        name: "MiniMax M2.1",
+        vendor: "minimax",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "MiniMaxM2",
+        name: "MiniMax M2",
+        vendor: "minimax",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "MiniMaxM2_5",
+        name: "MiniMax M2.5",
+        vendor: "minimax",
+        supports_tools: true,
+    },
+    // NVIDIA
+    ModelInfo {
+        key: "NemotronNano2",
+        name: "Nemotron Nano 2",
+        vendor: "nvidia",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "NemotronNano2VL",
+        name: "Nemotron Nano 2 VL",
+        vendor: "nvidia",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Nemotron3Nano30BA3B",
+        name: "Nemotron 3 Nano 30B A3B",
+        vendor: "nvidia",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Nemotron3Super120BA12B",
+        name: "Nemotron 3 Super 120B A12B",
+        vendor: "nvidia",
+        supports_tools: true,
+    },
+    // OpenAI
+    ModelInfo {
+        key: "GptOss20B",
+        name: "GPT OSS 20B",
+        vendor: "openai",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "GptOss120B",
+        name: "GPT OSS 120B",
+        vendor: "openai",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "GptOssSafeguard20B",
+        name: "GPT OSS Safeguard 20B",
+        vendor: "openai",
+        supports_tools: false,
+    },
+    ModelInfo {
+        key: "GptOssSafeguard120B",
+        name: "GPT OSS Safeguard 120B",
+        vendor: "openai",
+        supports_tools: false,
+    },
     // Meta Llama 4
     ModelInfo {
         key: "Llama4Scout17B",
@@ -428,6 +603,57 @@ const MODELS: &[ModelInfo] = &[
         vendor: "meta",
         supports_tools: true,
     },
+    // Meta Llama 3
+    ModelInfo {
+        key: "Llama3_70B",
+        name: "Llama 3 70B",
+        vendor: "meta",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "Llama3_8B",
+        name: "Llama 3 8B",
+        vendor: "meta",
+        supports_tools: true,
+    },
+    // Writer
+    ModelInfo {
+        key: "WriterPalmyraX4",
+        name: "Palmyra X4",
+        vendor: "writer",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "WriterPalmyraX5",
+        name: "Palmyra X5",
+        vendor: "writer",
+        supports_tools: true,
+    },
+    ModelInfo {
+        key: "WriterPalmyraVision7B",
+        name: "Palmyra Vision 7B",
+        vendor: "writer",
+        supports_tools: true,
+    },
+    // AI21
+    ModelInfo {
+        key: "AI21Jamba1_5Large",
+        name: "Jamba 1.5 Large",
+        vendor: "ai21",
+        supports_tools: false,
+    },
+    ModelInfo {
+        key: "AI21Jamba1_5Mini",
+        name: "Jamba 1.5 Mini",
+        vendor: "ai21",
+        supports_tools: false,
+    },
+    ModelInfo {
+        key: "AI21JambaInstruct",
+        name: "Jamba Instruct",
+        vendor: "ai21",
+        supports_tools: false,
+    },
 ];
 
 // =============================================================================
@@ -478,6 +704,12 @@ async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
     bedrock_provider_match!(
         key,
         // Anthropic Claude
+        Claude3Haiku,
+        Claude3Opus,
+        Claude3Sonnet,
+        Claude3_5Haiku,
+        Claude3_5SonnetV1,
+        Claude3_5SonnetV2,
         Claude3_7Sonnet,
         ClaudeOpus4,
         ClaudeOpus4_1,
@@ -485,6 +717,7 @@ async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
         ClaudeOpus4_6,
         ClaudeSonnet4,
         ClaudeSonnet4_5,
+        ClaudeSonnet4_6,
         ClaudeHaiku4_5,
         // Amazon Nova
         NovaMicro,
@@ -493,7 +726,13 @@ async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
         NovaPro,
         NovaPremier,
         Nova2Sonic,
+        // Amazon Titan
+        TitanTextExpress,
+        TitanTextLite,
+        TitanTextPremier,
         // Mistral
+        MistralLarge2,
+        MistralSmall,
         MistralLarge3,
         MagistralSmall,
         Ministral3B,
@@ -502,8 +741,11 @@ async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
         PixtralLarge,
         VoxtralMini3B,
         VoxtralSmall24B,
+        Devstral2_135B,
         // Cohere
+        CohereCommandR,
         CohereCommandRPlus,
+        CohereCommandRPlusV2,
         // Alibaba Qwen
         Qwen3_235B,
         Qwen3Coder480B,
@@ -522,6 +764,24 @@ async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
         // Moonshot
         KimiK2Thinking,
         KimiK2_5,
+        // Z.AI GLM
+        GLM4_7,
+        GLM4_7Flash,
+        GLM5,
+        // MiniMax
+        MiniMaxM2_1,
+        MiniMaxM2,
+        MiniMaxM2_5,
+        // NVIDIA
+        NemotronNano2,
+        NemotronNano2VL,
+        Nemotron3Nano30BA3B,
+        Nemotron3Super120BA12B,
+        // OpenAI
+        GptOss20B,
+        GptOss120B,
+        GptOssSafeguard20B,
+        GptOssSafeguard120B,
         // Meta Llama
         Llama4Scout17B,
         Llama4Maverick17B,
@@ -533,6 +793,16 @@ async fn create_provider(key: &str) -> Option<Arc<dyn ModelProvider>> {
         Llama3_1_405B,
         Llama3_1_70B,
         Llama3_1_8B,
+        Llama3_70B,
+        Llama3_8B,
+        // Writer
+        WriterPalmyraX4,
+        WriterPalmyraX5,
+        WriterPalmyraVision7B,
+        // AI21
+        AI21Jamba1_5Large,
+        AI21Jamba1_5Mini,
+        AI21JambaInstruct,
     )
 }
 
@@ -601,24 +871,37 @@ OPTIONS:
     --models <LIST>         Comma-separated list of model keys to test
 
 VENDORS (model creators, all accessed via AWS Bedrock):
-    anthropic, amazon, mistral, cohere, qwen, google, deepseek, moonshot, meta
+    anthropic, amazon, mistral, cohere, qwen, google, deepseek, moonshot, zai, minimax, nvidia, openai, meta, writer, ai21
 
 MODELS:
-    Claude:       Claude3_7Sonnet, ClaudeOpus4, ClaudeSonnet4, ClaudeSonnet4_5,
-                  ClaudeHaiku4_5, ClaudeOpus4_5, ClaudeOpus4_1, ClaudeOpus4_6
+    Claude 3:     Claude3Haiku, Claude3Opus, Claude3Sonnet
+    Claude 3.5:   Claude3_5Haiku, Claude3_5SonnetV1, Claude3_5SonnetV2
+    Claude 3.7+:  Claude3_7Sonnet, ClaudeOpus4, ClaudeSonnet4, ClaudeSonnet4_5,
+                  ClaudeHaiku4_5, ClaudeOpus4_5, ClaudeOpus4_1, ClaudeOpus4_6,
+                  ClaudeSonnet4_6
     Nova:         NovaMicro, NovaLite, Nova2Lite, NovaPro, NovaPremier, Nova2Sonic
-    Mistral:      MistralLarge3, MagistralSmall, Ministral3B, Ministral8B,
-                  Ministral14B, PixtralLarge, VoxtralMini3B, VoxtralSmall24B
-    Cohere:       CohereCommandRPlus
+    Titan:        TitanTextExpress, TitanTextLite, TitanTextPremier
+    Mistral:      MistralLarge2, MistralSmall, MistralLarge3, MagistralSmall,
+                  Ministral3B, Ministral8B, Ministral14B, PixtralLarge,
+                  VoxtralMini3B, VoxtralSmall24B, Devstral2_135B
+    Cohere:       CohereCommandR, CohereCommandRPlus, CohereCommandRPlusV2
     Qwen:         Qwen3_235B, Qwen3Coder480B, Qwen3_32B, Qwen3Coder30B,
                   Qwen3Next80B, Qwen3VL235B
     Google:       Gemma3_27B, Gemma3_12B, Gemma3_4B
     DeepSeek:     DeepSeekR1, DeepSeekV3_1, DeepSeekV3_2
     Moonshot:     KimiK2Thinking, KimiK2_5
+    Z.AI GLM:    GLM4_7, GLM4_7Flash, GLM5
+    MiniMax:     MiniMaxM2_1, MiniMaxM2, MiniMaxM2_5
+    NVIDIA:      NemotronNano2, NemotronNano2VL, Nemotron3Nano30BA3B,
+                  Nemotron3Super120BA12B
+    OpenAI:      GptOss20B, GptOss120B, GptOssSafeguard20B, GptOssSafeguard120B
     Llama 4:      Llama4Scout17B, Llama4Maverick17B
     Llama 3.3:    Llama3_3_70B
     Llama 3.2:    Llama3_2_90B, Llama3_2_11B, Llama3_2_3B, Llama3_2_1B
     Llama 3.1:    Llama3_1_405B, Llama3_1_70B, Llama3_1_8B
+    Llama 3:      Llama3_70B, Llama3_8B
+    Writer:       WriterPalmyraX4, WriterPalmyraX5, WriterPalmyraVision7B
+    AI21:         AI21Jamba1_5Large, AI21Jamba1_5Mini, AI21JambaInstruct
 
 EXAMPLES:
     # Run all models

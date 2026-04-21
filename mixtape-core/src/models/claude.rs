@@ -3,6 +3,84 @@
 use super::define_model;
 use crate::model::InferenceProfile;
 
+// =============================================================================
+// Claude 3 Models
+// =============================================================================
+
+define_model!(
+    /// Claude 3 Haiku - Fast, compact model for quick responses
+    Claude3Haiku {
+        display_name: "Claude 3 Haiku",
+        bedrock_id: "anthropic.claude-3-haiku-20240307-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 4_096,
+        anthropic_id: "claude-3-haiku-20240307"
+    }
+);
+
+define_model!(
+    /// Claude 3 Opus - Most capable Claude 3 model
+    Claude3Opus {
+        display_name: "Claude 3 Opus",
+        bedrock_id: "anthropic.claude-3-opus-20240229-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 4_096,
+        anthropic_id: "claude-3-opus-20240229"
+    }
+);
+
+define_model!(
+    /// Claude 3 Sonnet - Balanced Claude 3 model
+    Claude3Sonnet {
+        display_name: "Claude 3 Sonnet",
+        bedrock_id: "anthropic.claude-3-sonnet-20240229-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 4_096,
+        anthropic_id: "claude-3-sonnet-20240229"
+    }
+);
+
+// =============================================================================
+// Claude 3.5 Models
+// =============================================================================
+
+define_model!(
+    /// Claude 3.5 Haiku - Fast, efficient model
+    Claude3_5Haiku {
+        display_name: "Claude 3.5 Haiku",
+        bedrock_id: "anthropic.claude-3-5-haiku-20241022-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 8_192,
+        anthropic_id: "claude-3-5-haiku-20241022"
+    }
+);
+
+define_model!(
+    /// Claude 3.5 Sonnet v1 - First Claude 3.5 Sonnet release
+    Claude3_5SonnetV1 {
+        display_name: "Claude 3.5 Sonnet v1",
+        bedrock_id: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+        context_tokens: 200_000,
+        output_tokens: 8_192,
+        anthropic_id: "claude-3-5-sonnet-20240620"
+    }
+);
+
+define_model!(
+    /// Claude 3.5 Sonnet v2 - Updated Claude 3.5 Sonnet with improvements
+    Claude3_5SonnetV2 {
+        display_name: "Claude 3.5 Sonnet v2",
+        bedrock_id: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        context_tokens: 200_000,
+        output_tokens: 8_192,
+        anthropic_id: "claude-3-5-sonnet-20241022"
+    }
+);
+
+// =============================================================================
+// Claude 3.7 Models
+// =============================================================================
+
 define_model!(
     /// Claude 3.7 Sonnet - Latest Claude 3.x with improved reasoning
     Claude3_7Sonnet {

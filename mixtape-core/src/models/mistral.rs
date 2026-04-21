@@ -3,6 +3,26 @@
 use super::define_model;
 
 define_model!(
+    /// Mistral Large 2 - Previous generation flagship model
+    MistralLarge2 {
+        display_name: "Mistral Large 2",
+        bedrock_id: "mistral.mistral-large-2407-v1:0",
+        context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Mistral Small - Compact instruction model
+    MistralSmall {
+        display_name: "Mistral Small",
+        bedrock_id: "mistral.mistral-small-2402-v1:0",
+        context_tokens: 32_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
     /// Mistral Large 3 - Flagship 675B MoE model with 41B active parameters
     MistralLarge3 {
         display_name: "Mistral Large 3",
@@ -78,6 +98,16 @@ define_model!(
         display_name: "Voxtral Small 24B",
         bedrock_id: "mistral.voxtral-small-24b-2507",
         context_tokens: 128_000,
+        output_tokens: 8_192
+    }
+);
+
+define_model!(
+    /// Devstral 2 135B - Code-focused instruction model
+    Devstral2_135B {
+        display_name: "Devstral 2 135B",
+        bedrock_id: "mistral.devstral-2-135b-instruct",
+        context_tokens: 256_000,
         output_tokens: 8_192
     }
 );

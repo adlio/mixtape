@@ -63,6 +63,30 @@ define_model!(
 );
 
 define_model!(
+    /// Claude Opus 4.7 - Next-generation flagship Claude model
+    ClaudeOpus4_7 {
+        display_name: "Claude Opus 4.7",
+        bedrock_id: "anthropic.claude-opus-4-7-v1",
+        context_tokens: 200_000,
+        output_tokens: 128_000,
+        anthropic_id: "claude-opus-4-7",
+        default_inference_profile: InferenceProfile::Global
+    }
+);
+
+define_model!(
+    /// Claude Mythos Preview - Preview model with advanced capabilities
+    ClaudeMythosPreview {
+        display_name: "Claude Mythos Preview",
+        bedrock_id: "anthropic.claude-mythos-preview",
+        context_tokens: 200_000,
+        output_tokens: 128_000,
+        anthropic_id: "claude-mythos-preview",
+        default_inference_profile: InferenceProfile::Global
+    }
+);
+
+define_model!(
     /// Claude Sonnet 4 - Balanced performance and cost
     ClaudeSonnet4 {
         display_name: "Claude Sonnet 4",

@@ -184,8 +184,8 @@ pub use provider::BedrockProvider;
 
 // Anthropic Claude
 pub use models::{
-    Claude3_7Sonnet, ClaudeHaiku4_5, ClaudeOpus4, ClaudeOpus4_1, ClaudeOpus4_5, ClaudeOpus4_6,
-    ClaudeSonnet4, ClaudeSonnet4_5, ClaudeSonnet4_6,
+    Claude3_7Sonnet, ClaudeHaiku4_5, ClaudeMythosPreview, ClaudeOpus4, ClaudeOpus4_1,
+    ClaudeOpus4_5, ClaudeOpus4_6, ClaudeOpus4_7, ClaudeSonnet4, ClaudeSonnet4_5, ClaudeSonnet4_6,
 };
 // Amazon Nova
 pub use models::{Nova2Lite, Nova2Sonic, NovaLite, NovaMicro, NovaPremier, NovaPro};

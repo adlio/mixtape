@@ -17,6 +17,11 @@
 //! - `nova` - Amazon Nova models
 //! - `qwen` - Alibaba Qwen models
 
+mod catalog;
+pub use catalog::{
+    bedrock_model_descriptor, BedrockConversationApi, BedrockModelDescriptor, BEDROCK_MODEL_CATALOG,
+};
+
 mod claude;
 mod cohere;
 mod deepseek;

@@ -82,6 +82,9 @@ fn to_anthropic_content_block(block: &ContentBlock) -> Result<ContentBlockParam,
                 cache_control: None,
             })
         }
+        ContentBlock::RedactedThinking { data } => {
+            Ok(ContentBlockParam::RedactedThinking { data: data.clone() })
+        }
         ContentBlock::Thinking {
             thinking,
             signature,
@@ -209,11 +212,10 @@ fn from_anthropic_content_block(block: &AnthropicContentBlock) -> Option<Content
             thinking: thinking.clone(),
             signature: signature.clone(),
         }),
-        // Redacted thinking - we preserve it as thinking with empty content
-        AnthropicContentBlock::RedactedThinking { data } => Some(ContentBlock::Thinking {
-            thinking: String::new(),
-            signature: data.clone(),
-        }),
+        // Opaque reasoning has a different replay shape from signed text.
+        AnthropicContentBlock::RedactedThinking { data } => {
+            Some(ContentBlock::RedactedThinking { data: data.clone() })
+        }
         // Server tool use blocks - not exposed to mixtape types yet
         AnthropicContentBlock::ServerToolUse { .. } => None,
         AnthropicContentBlock::WebSearchToolResult { .. } => None,
@@ -768,14 +770,14 @@ mod tests {
 
         assert_eq!(msg.content.len(), 1);
         match &msg.content[0] {
-            ContentBlock::Thinking {
-                thinking,
-                signature,
-            } => {
-                assert!(thinking.is_empty());
-                assert_eq!(signature, "redacted_data_here");
+            ContentBlock::RedactedThinking { data } => {
+                assert_eq!(data, "redacted_data_here");
+                assert!(
+                    matches!(to_anthropic_content_block(&msg.content[0]).unwrap(),
+                    ContentBlockParam::RedactedThinking { data } if data == "redacted_data_here")
+                );
             }
-            _ => panic!("Expected Thinking block for redacted thinking"),
+            _ => panic!("Expected RedactedThinking block"),
         }
     }
 

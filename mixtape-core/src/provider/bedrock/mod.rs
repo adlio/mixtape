@@ -1,19 +1,23 @@
 //! AWS Bedrock provider implementation
 
 mod conversion;
+mod streaming;
+mod telemetry;
+
+pub use telemetry::{BedrockInvocation, InvocationOutcome, InvocationUsage};
 
 use super::retry::{retry_with_backoff, RetryCallback, RetryConfig, RetryInfo};
 use super::{ModelProvider, ProviderError, StreamEvent};
 use crate::events::TokenUsage;
 use crate::model::{BedrockModel, ModelResponse};
-use crate::types::{Message, ThinkingConfig, ToolDefinition, ToolUseBlock};
+use crate::types::{Message, ThinkingConfig, ToolDefinition};
 use aws_sdk_bedrockruntime::error::SdkError;
+use aws_sdk_bedrockruntime::operation::RequestId;
 use aws_sdk_bedrockruntime::{
     operation::converse::ConverseOutput,
     operation::converse_stream::ConverseStreamOutput as StreamOutputResult,
     types::{
-        ContentBlockDelta, ContentBlockStart, ConverseStreamOutput, Message as BedrockMessage,
-        SystemContentBlock, Tool as BedrockTool, ToolConfiguration,
+        Message as BedrockMessage, SystemContentBlock, Tool as BedrockTool, ToolConfiguration,
     },
     Client,
 };
@@ -24,8 +28,9 @@ use conversion::{
 use futures::stream::BoxStream;
 use std::collections::HashMap;
 use std::error::Error as StdError;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // ===== Error Handling Helpers =====
 
@@ -186,6 +191,10 @@ struct ConverseRequest {
 /// This abstraction allows for testing without AWS credentials
 #[async_trait::async_trait]
 trait BedrockClient: Send + Sync {
+    fn region(&self) -> Option<String> {
+        None
+    }
+
     /// Execute a non-streaming converse request
     async fn converse(&self, request: ConverseRequest) -> Result<ConverseOutput, ProviderError>;
 
@@ -209,6 +218,13 @@ impl SdkBedrockClient {
 
 #[async_trait::async_trait]
 impl BedrockClient for SdkBedrockClient {
+    fn region(&self) -> Option<String> {
+        self.client
+            .config()
+            .region()
+            .map(|region| region.as_ref().to_owned())
+    }
+
     async fn converse(&self, req: ConverseRequest) -> Result<ConverseOutput, ProviderError> {
         let mut request = self
             .client
@@ -310,20 +326,15 @@ fn build_additional_model_fields(
         );
     }
 
-    // Add thinking config if enabled (overrides any user-provided thinking)
-    if let Some(ThinkingConfig::Enabled { budget_tokens }) = thinking_config {
-        let thinking_obj = Document::Object(
-            [
-                ("type".to_string(), Document::String("enabled".to_string())),
-                (
-                    "budget_tokens".to_string(),
-                    Document::Number(Number::PosInt(budget_tokens as u64)),
-                ),
-            ]
-            .into_iter()
-            .collect(),
-        );
-        fields.insert("thinking".to_string(), thinking_obj);
+    // Explicitly disabling thinking is different from omitting the field.
+    if let Some(config) = thinking_config {
+        let value = match config {
+            ThinkingConfig::Enabled { budget_tokens } => {
+                serde_json::json!({"type": "enabled", "budget_tokens": budget_tokens})
+            }
+            ThinkingConfig::Disabled => serde_json::json!({"type": "disabled"}),
+        };
+        fields.insert("thinking".to_owned(), json_to_document(&value));
     }
 
     if fields.is_empty() {
@@ -346,8 +357,9 @@ fn build_additional_model_fields(
 pub struct BedrockProvider {
     client: Arc<dyn BedrockClient>,
     base_model_id: String,
+    inference_target: Option<String>,
     inference_profile: InferenceProfile,
-    model_name: &'static str,
+    model_name: String,
     max_context_tokens: usize,
     max_output_tokens: usize,
     max_tokens: i32,
@@ -358,12 +370,16 @@ pub struct BedrockProvider {
     additional_fields: HashMap<String, serde_json::Value>,
     retry_config: RetryConfig,
     on_retry: Option<RetryCallback>,
+    on_invocation: Option<Arc<dyn Fn(BedrockInvocation) + Send + Sync>>,
 }
 
 impl BedrockProvider {
-    /// Get the effective model ID based on inference profile configuration
-    fn effective_model_id(&self) -> String {
-        self.inference_profile.apply_to(&self.base_model_id)
+    /// Exact identifier dispatched to Bedrock. This is not provider-reported
+    /// identity and does not establish the model behind an opaque profile ARN.
+    pub fn effective_model_id(&self) -> String {
+        self.inference_target
+            .clone()
+            .unwrap_or_else(|| self.inference_profile.apply_to(&self.base_model_id))
     }
 }
 
@@ -372,8 +388,9 @@ impl Clone for BedrockProvider {
         Self {
             client: Arc::clone(&self.client),
             base_model_id: self.base_model_id.clone(),
+            inference_target: self.inference_target.clone(),
             inference_profile: self.inference_profile,
-            model_name: self.model_name,
+            model_name: self.model_name.clone(),
             max_context_tokens: self.max_context_tokens,
             max_output_tokens: self.max_output_tokens,
             max_tokens: self.max_tokens,
@@ -384,6 +401,7 @@ impl Clone for BedrockProvider {
             additional_fields: self.additional_fields.clone(),
             retry_config: self.retry_config.clone(),
             on_retry: self.on_retry.clone(),
+            on_invocation: self.on_invocation.clone(),
         }
     }
 }
@@ -414,8 +432,9 @@ impl BedrockProvider {
         Ok(Self {
             client: Arc::new(SdkBedrockClient::new(client)),
             base_model_id: model.bedrock_id().to_string(),
+            inference_target: None,
             inference_profile: model.default_inference_profile(),
-            model_name: model.name(),
+            model_name: model.name().to_owned(),
             max_context_tokens: model.max_context_tokens(),
             max_output_tokens: model.max_output_tokens(),
             max_tokens: DEFAULT_MAX_TOKENS,
@@ -426,6 +445,7 @@ impl BedrockProvider {
             additional_fields: HashMap::new(),
             retry_config: RetryConfig::default(),
             on_retry: None,
+            on_invocation: None,
         })
     }
 
@@ -434,8 +454,9 @@ impl BedrockProvider {
         Self {
             client: Arc::new(SdkBedrockClient::new(client)),
             base_model_id: model.bedrock_id().to_string(),
+            inference_target: None,
             inference_profile: model.default_inference_profile(),
-            model_name: model.name(),
+            model_name: model.name().to_owned(),
             max_context_tokens: model.max_context_tokens(),
             max_output_tokens: model.max_output_tokens(),
             max_tokens: DEFAULT_MAX_TOKENS,
@@ -446,6 +467,7 @@ impl BedrockProvider {
             additional_fields: HashMap::new(),
             retry_config: RetryConfig::default(),
             on_retry: None,
+            on_invocation: None,
         }
     }
 
@@ -455,8 +477,9 @@ impl BedrockProvider {
         Self {
             client,
             base_model_id: model.bedrock_id().to_string(),
+            inference_target: None,
             inference_profile: model.default_inference_profile(),
-            model_name: model.name(),
+            model_name: model.name().to_owned(),
             max_context_tokens: model.max_context_tokens(),
             max_output_tokens: model.max_output_tokens(),
             max_tokens: DEFAULT_MAX_TOKENS,
@@ -467,6 +490,7 @@ impl BedrockProvider {
             additional_fields: HashMap::new(),
             retry_config: RetryConfig::default(),
             on_retry: None,
+            on_invocation: None,
         }
     }
 
@@ -495,6 +519,36 @@ impl BedrockProvider {
     pub fn with_inference_profile(mut self, profile: InferenceProfile) -> Self {
         self.inference_profile = profile;
         self
+    }
+
+    /// Use an exact inference-profile ID or ARN without adding a geographic
+    /// prefix. The caller must verify that an opaque ARN routes to this model;
+    /// Mixtape does not claim to resolve that mapping. Credentials are unchanged.
+    pub fn with_inference_target(
+        mut self,
+        target: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
+        let target = target.into();
+        crate::model::RuntimeBedrockModel::new(
+            &self.model_name,
+            &target,
+            self.max_context_tokens,
+            self.max_output_tokens,
+        )?;
+        let qualified_model = ["us.", "eu.", "apac.", "au.", "in.", "jp.", "global."]
+            .iter()
+            .find_map(|prefix| target.strip_prefix(prefix))
+            .unwrap_or(&target);
+        let base = crate::models::bedrock_model_descriptor(&self.base_model_id)
+            .map(|model| model.model_id)
+            .unwrap_or(&self.base_model_id);
+        if !target.starts_with("arn:") && qualified_model != base {
+            return Err(ProviderError::Configuration(
+                "Inference target names a different model".into(),
+            ));
+        }
+        self.inference_target = Some(target);
+        Ok(self)
     }
 
     /// Set the maximum number of tokens to generate per request
@@ -540,6 +594,232 @@ impl BedrockProvider {
     pub fn with_thinking(mut self, budget_tokens: u32) -> Self {
         self.thinking_config = Some(ThinkingConfig::Enabled { budget_tokens });
         self
+    }
+
+    /// Use Claude's adaptive thinking contract. Effort, if desired, is configured
+    /// separately through `with_thinking_effort`; omission keeps model defaults.
+    pub fn with_adaptive_thinking(mut self) -> Self {
+        self.thinking_config = None;
+        self.additional_fields
+            .insert("thinking".into(), serde_json::json!({"type": "adaptive"}));
+        self
+    }
+
+    /// Explicitly disable thinking. Omitting the thinking field does not disable
+    /// it on models such as Opus 5 and Sonnet 5.
+    pub fn with_disabled_thinking(mut self) -> Self {
+        self.thinking_config = Some(ThinkingConfig::Disabled);
+        self
+    }
+
+    /// Set Claude's output effort. Supported values depend on the model; invalid
+    /// or unverified combinations are rejected before making a request.
+    pub fn with_thinking_effort(mut self, effort: impl Into<String>) -> Self {
+        let config = self
+            .additional_fields
+            .entry("output_config".into())
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(object) = config.as_object_mut() {
+            object.insert("effort".into(), serde_json::Value::String(effort.into()));
+        } else {
+            // Keep invalid custom configuration intact so validation reports it.
+            // Never silently replace another caller's output configuration.
+        }
+        self
+    }
+
+    /// Validate local ceilings and known model/API constraints without credentials
+    /// or network I/O. Account access and application data eligibility are separate.
+    pub fn validate_configuration(&self) -> Result<(), ProviderError> {
+        let invalid = |message: &str| ProviderError::Configuration(message.into());
+        if self.max_tokens <= 0 || self.max_tokens as usize > self.max_output_tokens {
+            return Err(invalid(
+                "max_tokens must be positive and within the configured output ceiling",
+            ));
+        }
+        for value in [self.temperature, self.top_p].into_iter().flatten() {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err(invalid(
+                    "Sampling values must be finite and between 0 and 1",
+                ));
+            }
+        }
+        if self.top_k == Some(0) {
+            return Err(invalid("top_k must be positive"));
+        }
+        let target = self.effective_model_id();
+        let descriptor = crate::models::bedrock_model_descriptor(&self.base_model_id)
+            .or_else(|| crate::models::bedrock_model_descriptor(&target));
+        if let Some(model) = descriptor {
+            if model.conversation_api != crate::models::BedrockConversationApi::Converse {
+                return Err(invalid("This model requires a Bedrock Chat Completions adapter for multi-turn reasoning; Converse is not selected as a fallback"));
+            }
+            if model.requires_inference_profile && target == model.model_id {
+                return Err(invalid("This model requires an explicit inference-profile ID or ARN; choose its routing before calling it"));
+            }
+        }
+        let fields = build_additional_model_fields(
+            self.top_k,
+            self.thinking_config,
+            &self.additional_fields,
+        )
+        .as_ref()
+        .map(conversion::document_to_json)
+        .unwrap_or_else(|| serde_json::json!({}));
+        let thinking = fields.get("thinking");
+        let output_config = fields.get("output_config");
+        if output_config.is_some_and(|value| !value.is_object()) {
+            return Err(invalid("output_config must be an object"));
+        }
+        let model_id = descriptor
+            .map(|value| value.model_id)
+            .unwrap_or(&self.base_model_id);
+        if model_id == "anthropic.claude-opus-4-7"
+            && (self.temperature.is_some() || self.top_p.is_some() || fields.get("top_k").is_some())
+        {
+            return Err(invalid(
+                "Opus 4.7 does not accept temperature, top_p, or top_k",
+            ));
+        }
+        if model_id.starts_with("anthropic.claude-fable-") {
+            if fields.get("top_k").is_some() || self.temperature.is_some_and(|value| value != 1.0) {
+                return Err(invalid(
+                    "Fable requires temperature 1 or omitted and does not accept top_k",
+                ));
+            }
+            if let Some(top_p) = self.top_p {
+                let supported = if model_id == "anthropic.claude-fable-5-1" {
+                    top_p == 0.99 && self.temperature.is_none()
+                } else {
+                    (0.99..1.0).contains(&top_p)
+                };
+                if !supported {
+                    return Err(invalid("Unsupported Fable sampling combination"));
+                }
+            }
+        }
+        if thinking.is_none()
+            && output_config
+                .and_then(|value| value.get("effort"))
+                .is_none()
+        {
+            return Ok(());
+        }
+        if !model_id.starts_with("anthropic.") {
+            return Err(invalid("Claude thinking controls require a known Claude model ID; an opaque profile ARN needs a verified model mapping"));
+        }
+        let mode = match thinking {
+            Some(value) => Some(
+                value
+                    .get("type")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| invalid("thinking requires a type"))?,
+            ),
+            None => None,
+        };
+        let adaptive = matches!(
+            model_id,
+            "anthropic.claude-opus-5"
+                | "anthropic.claude-sonnet-5"
+                | "anthropic.claude-opus-4-7"
+                | "anthropic.claude-opus-4-6-v1"
+                | "anthropic.claude-sonnet-4-6"
+                | "anthropic.claude-fable-5"
+                | "anthropic.claude-fable-5-1"
+        );
+        let adaptive_only = model_id.starts_with("anthropic.claude-fable-");
+        let manual = matches!(
+            model_id,
+            "anthropic.claude-3-7-sonnet-20250219-v1:0"
+                | "anthropic.claude-opus-4-20250514-v1:0"
+                | "anthropic.claude-opus-4-1-20250805-v1:0"
+                | "anthropic.claude-opus-4-5-20251101-v1:0"
+                | "anthropic.claude-opus-4-6-v1"
+                | "anthropic.claude-sonnet-4-20250514-v1:0"
+                | "anthropic.claude-sonnet-4-5-20250929-v1:0"
+                | "anthropic.claude-sonnet-4-6"
+                | "anthropic.claude-haiku-4-5-20251001-v1:0"
+        );
+        if mode.is_some() && !adaptive && !manual {
+            return Err(invalid("Thinking controls are not verified for this model"));
+        }
+        match mode {
+            Some("adaptive") if !adaptive => {
+                return Err(invalid("Adaptive thinking is not verified for this model"))
+            }
+            Some("disabled") if adaptive_only => {
+                return Err(invalid("This model does not support disabling thinking"))
+            }
+            Some("enabled") => {
+                if adaptive
+                    && !matches!(
+                        model_id,
+                        "anthropic.claude-opus-4-6-v1" | "anthropic.claude-sonnet-4-6"
+                    )
+                {
+                    return Err(invalid(
+                        "This model does not support manual thinking budgets",
+                    ));
+                }
+                let budget = thinking
+                    .and_then(|value| value.get("budget_tokens"))
+                    .and_then(serde_json::Value::as_u64)
+                    .ok_or_else(|| invalid("Manual thinking requires budget_tokens"))?;
+                if budget < 1024 || budget >= self.max_tokens as u64 {
+                    return Err(invalid(
+                        "Thinking budget must be at least 1024 and smaller than max_tokens",
+                    ));
+                }
+            }
+            Some("adaptive" | "disabled") | None => {}
+            Some(_) => return Err(invalid("Unknown thinking mode")),
+        }
+        if matches!(mode, Some("adaptive" | "disabled"))
+            && thinking.is_some_and(|value| value.get("budget_tokens").is_some())
+        {
+            return Err(invalid(
+                "Adaptive and disabled thinking do not accept budget_tokens",
+            ));
+        }
+        if thinking.is_some_and(|value| value.get("effort").is_some()) {
+            return Err(invalid("Effort belongs in output_config, not thinking"));
+        }
+        if let Some(effort) = output_config.and_then(|value| value.get("effort")) {
+            let effort = effort
+                .as_str()
+                .ok_or_else(|| invalid("Effort must be a string"))?;
+            let supported = match effort {
+                "low" | "medium" | "high" => {
+                    adaptive || model_id == "anthropic.claude-opus-4-5-20251101-v1:0"
+                }
+                "xhigh" => matches!(
+                    model_id,
+                    "anthropic.claude-opus-5"
+                        | "anthropic.claude-opus-4-6-v1"
+                        | "anthropic.claude-fable-5-1"
+                ),
+                "max" => matches!(
+                    model_id,
+                    "anthropic.claude-opus-5"
+                        | "anthropic.claude-opus-4-6-v1"
+                        | "anthropic.claude-sonnet-4-6"
+                        | "anthropic.claude-fable-5-1"
+                ),
+                _ => false,
+            };
+            if !supported {
+                return Err(invalid("Effort level is not verified for this model"));
+            }
+            if model_id == "anthropic.claude-opus-5"
+                && mode == Some("disabled")
+                && matches!(effort, "xhigh" | "max")
+            {
+                return Err(invalid(
+                    "Opus 5 effort cannot exceed high when thinking is disabled",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Enable 1M token context window for Claude Sonnet 4/4.5 (relies on Anthropic beta feature)
@@ -661,6 +941,33 @@ impl BedrockProvider {
         self
     }
 
+    /// Observe provider calls using metadata-only records. A completed protocol
+    /// response still needs application-level summary validation. The callback
+    /// should return promptly and must not panic. Dropping a stream before it is
+    /// consumed is not a completed call and does not produce a completion record.
+    pub fn with_invocation_callback<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(BedrockInvocation) + Send + Sync + 'static,
+    {
+        self.on_invocation = Some(Arc::new(callback));
+        self
+    }
+
+    fn invocation(&self, api: &'static str) -> BedrockInvocation {
+        BedrockInvocation::new(
+            &self.base_model_id,
+            self.effective_model_id(),
+            api,
+            self.client.region(),
+        )
+    }
+
+    fn observe(&self, record: BedrockInvocation) {
+        if let Some(callback) = &self.on_invocation {
+            callback(record);
+        }
+    }
+
     fn build_request(
         &self,
         messages: Vec<BedrockMessage>,
@@ -685,7 +992,7 @@ impl BedrockProvider {
 #[async_trait::async_trait]
 impl ModelProvider for BedrockProvider {
     fn name(&self) -> &str {
-        self.model_name
+        &self.model_name
     }
 
     fn max_context_tokens(&self) -> usize {
@@ -702,6 +1009,7 @@ impl ModelProvider for BedrockProvider {
         tools: Vec<ToolDefinition>,
         system_prompt: Option<String>,
     ) -> Result<ModelResponse, ProviderError> {
+        self.validate_configuration()?;
         // Convert mixtape types to Bedrock types
         let bedrock_messages: Vec<BedrockMessage> = messages
             .iter()
@@ -713,8 +1021,12 @@ impl ModelProvider for BedrockProvider {
             .map(to_bedrock_tool)
             .collect::<Result<Vec<_>, _>>()?;
 
+        let started = Instant::now();
+        let attempts = AtomicUsize::new(0);
+        let mut record = self.invocation("converse");
         let response = retry_with_backoff(
             || {
+                attempts.fetch_add(1, Ordering::Relaxed);
                 self.client.converse(self.build_request(
                     bedrock_messages.clone(),
                     bedrock_tools.clone(),
@@ -724,37 +1036,64 @@ impl ModelProvider for BedrockProvider {
             &self.retry_config,
             &self.on_retry,
         )
-        .await?;
-
-        // Extract output
-        let output = response
-            .output
-            .ok_or_else(|| ProviderError::Model("No output from model".to_string()))?;
-
-        let bedrock_message = match output {
-            aws_sdk_bedrockruntime::types::ConverseOutput::Message(msg) => msg,
-            _ => {
-                return Err(ProviderError::Model(
-                    "Unexpected output type from model".to_string(),
-                ))
+        .await;
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                record.finish(
+                    started,
+                    attempts.load(Ordering::Relaxed),
+                    InvocationOutcome::Failed,
+                );
+                self.observe(record);
+                return Err(error);
             }
         };
-
-        // Convert Bedrock types back to mixtape types
-        let message = from_bedrock_message(&bedrock_message);
-        let stop_reason = from_bedrock_stop_reason(&response.stop_reason);
-
-        // Extract token usage
-        let usage = response.usage.as_ref().map(|u| TokenUsage {
-            input_tokens: u.input_tokens as usize,
-            output_tokens: u.output_tokens as usize,
-        });
-
-        Ok(ModelResponse {
-            message,
-            stop_reason,
-            usage,
-        })
+        record.request_id = response.request_id().map(str::to_owned);
+        record.provider_stop_reason = Some(response.stop_reason.as_str().to_owned());
+        record.usage = response.usage.as_ref().map(InvocationUsage::from_bedrock);
+        record.provider_latency_ms = response
+            .metrics
+            .as_ref()
+            .and_then(|metrics| u64::try_from(metrics.latency_ms).ok());
+        let result = (|| {
+            let output = response
+                .output
+                .as_ref()
+                .ok_or_else(|| ProviderError::Model("No output from model".into()))?;
+            let aws_sdk_bedrockruntime::types::ConverseOutput::Message(message) = output else {
+                return Err(ProviderError::Model(
+                    "Unexpected output type from model".into(),
+                ));
+            };
+            let usage = response
+                .usage
+                .as_ref()
+                .map(|usage| {
+                    Ok::<_, ProviderError>(TokenUsage {
+                        input_tokens: usize::try_from(usage.input_tokens).map_err(|_| {
+                            ProviderError::Model("Negative input token count".into())
+                        })?,
+                        output_tokens: usize::try_from(usage.output_tokens).map_err(|_| {
+                            ProviderError::Model("Negative output token count".into())
+                        })?,
+                    })
+                })
+                .transpose()?;
+            Ok(ModelResponse {
+                message: from_bedrock_message(message),
+                stop_reason: from_bedrock_stop_reason(&response.stop_reason),
+                usage,
+            })
+        })();
+        let outcome = if result.is_ok() {
+            telemetry::stop_outcome(response.stop_reason.as_str())
+        } else {
+            InvocationOutcome::Failed
+        };
+        record.finish(started, attempts.load(Ordering::Relaxed), outcome);
+        self.observe(record);
+        result
     }
 
     async fn generate_stream(
@@ -763,6 +1102,7 @@ impl ModelProvider for BedrockProvider {
         tools: Vec<ToolDefinition>,
         system_prompt: Option<String>,
     ) -> Result<BoxStream<'static, Result<StreamEvent, ProviderError>>, ProviderError> {
+        self.validate_configuration()?;
         // Convert mixtape types to Bedrock types
         let bedrock_messages: Vec<BedrockMessage> = messages
             .iter()
@@ -774,8 +1114,12 @@ impl ModelProvider for BedrockProvider {
             .map(to_bedrock_tool)
             .collect::<Result<Vec<_>, _>>()?;
 
+        let started = Instant::now();
+        let attempts = AtomicUsize::new(0);
+        let mut record = self.invocation("converse_stream");
         let output = retry_with_backoff(
             || {
+                attempts.fetch_add(1, Ordering::Relaxed);
                 self.client.converse_stream(self.build_request(
                     bedrock_messages.clone(),
                     bedrock_tools.clone(),
@@ -785,108 +1129,61 @@ impl ModelProvider for BedrockProvider {
             &self.retry_config,
             &self.on_retry,
         )
-        .await?;
-
-        let stream = output.stream;
-
-        // Return an async stream that yields events as they arrive
+        .await;
+        let output = match output {
+            Ok(output) => output,
+            Err(error) => {
+                record.finish(
+                    started,
+                    attempts.load(Ordering::Relaxed),
+                    InvocationOutcome::Failed,
+                );
+                self.observe(record);
+                return Err(error);
+            }
+        };
+        record.request_id = output.request_id().map(str::to_owned);
+        let attempts = attempts.load(Ordering::Relaxed);
+        let on_invocation = self.on_invocation.clone();
+        let mut stream = output.stream;
         let event_stream = async_stream::stream! {
-            let mut stream = stream;
-
-            // Track tool uses in progress by content_block_index
-            // Each entry: (tool_use_id, name, input_json_string)
-            let mut tool_uses_in_progress: HashMap<i32, (String, String, String)> = HashMap::new();
-
-            // Track token usage from metadata event
-            let mut usage: Option<TokenUsage> = None;
-
+            let mut assembler = streaming::StreamAssembler::default();
             loop {
                 match stream.recv().await {
-                    Ok(Some(output)) => match output {
-                        ConverseStreamOutput::ContentBlockStart(start) => {
-                            // Handle tool use start
-                            if let Some(ContentBlockStart::ToolUse(tool_start)) = start.start {
-                                let index = start.content_block_index;
-                                let id = tool_start.tool_use_id;
-                                let name = tool_start.name;
-                                tool_uses_in_progress.insert(index, (id, name, String::new()));
-                            }
+                    Ok(Some(event)) => match assembler.push(event) {
+                        Ok(events) => {
+                            for event in events { yield Ok(event); }
                         }
-                        ConverseStreamOutput::ContentBlockDelta(delta) => {
-                            match delta.delta {
-                                Some(ContentBlockDelta::Text(text)) => {
-                                    yield Ok(StreamEvent::TextDelta(text));
-                                }
-                                Some(ContentBlockDelta::ToolUse(tool_delta)) => {
-                                    // Append to the tool input JSON string
-                                    if let Some(entry) = tool_uses_in_progress.get_mut(&delta.content_block_index) {
-                                        entry.2.push_str(&tool_delta.input);
-                                    }
-                                }
-                                _ => {}
-                            }
+                        Err(error) => {
+                            assembler.update_invocation(&mut record);
+                            record.finish(started, attempts, InvocationOutcome::Failed);
+                            if let Some(callback) = &on_invocation { callback(record); }
+                            yield Err(error);
+                            return;
                         }
-                        ConverseStreamOutput::ContentBlockStop(stop) => {
-                            // Finalize tool use if this was a tool block
-                            if let Some((id, name, input_json)) = tool_uses_in_progress.remove(&stop.content_block_index) {
-                                // Parse the accumulated JSON input
-                                let input = match serde_json::from_str::<serde_json::Value>(&input_json) {
-                                    Ok(v) => v,
-                                    Err(_) => serde_json::json!({}),
-                                };
-
-                                let tool_use = ToolUseBlock {
-                                    id,
-                                    name,
-                                    input,
-                                };
-                                yield Ok(StreamEvent::ToolUse(tool_use));
-                            }
-                        }
-                        ConverseStreamOutput::Metadata(meta) => {
-                            // Capture token usage from metadata event
-                            if let Some(u) = meta.usage {
-                                usage = Some(TokenUsage {
-                                    input_tokens: u.input_tokens as usize,
-                                    output_tokens: u.output_tokens as usize,
-                                });
-                            }
-                        }
-                        ConverseStreamOutput::MessageStop(stop) => {
-                            // Don't break yet - wait for Metadata event which comes after
-                            let stop_reason = from_bedrock_stop_reason(&stop.stop_reason);
-
-                            // Continue reading to get Metadata, then emit Stop
-                            loop {
-                                match stream.recv().await {
-                                    Ok(Some(ConverseStreamOutput::Metadata(meta))) => {
-                                        if let Some(u) = meta.usage {
-                                            usage = Some(TokenUsage {
-                                                input_tokens: u.input_tokens as usize,
-                                                output_tokens: u.output_tokens as usize,
-                                            });
-                                        }
-                                        break;
-                                    }
-                                    Ok(None) => break,
-                                    Err(_) => break,
-                                    _ => continue, // Skip any other events
-                                }
-                            }
-
-                            yield Ok(StreamEvent::Stop {
-                                stop_reason,
-                                usage,
-                            });
-                            break;
-                        }
-                        _ => {}
                     },
                     Ok(None) => break,
-                    Err(e) => {
-                        yield Err(ProviderError::Other(e.to_string()));
-                        break;
+                    Err(error) => {
+                        assembler.update_invocation(&mut record);
+                        record.finish(started, attempts, InvocationOutcome::Failed);
+                        if let Some(callback) = &on_invocation { callback(record); }
+                        yield Err(ProviderError::Model(format!("Bedrock response stream failed: {error}")));
+                        return;
                     }
+                }
+            }
+            assembler.update_invocation(&mut record);
+            match assembler.finish() {
+                Ok(events) => {
+                    let outcome = telemetry::stop_outcome(record.provider_stop_reason.as_deref().unwrap_or("unknown"));
+                    record.finish(started, attempts, outcome);
+                    if let Some(callback) = &on_invocation { callback(record); }
+                    for event in events { yield Ok(event); }
+                }
+                Err(error) => {
+                    record.finish(started, attempts, InvocationOutcome::Failed);
+                    if let Some(callback) = &on_invocation { callback(record); }
+                    yield Err(error);
                 }
             }
         };
@@ -1504,6 +1801,230 @@ mod tests {
     fn test_classify_credentials_missing() {
         let err = classify_error_message("No credentials configured", "credentials missing".into());
         assert!(matches!(err, ProviderError::Authentication(_)));
+    }
+
+    // ===== Runtime configuration regression tests =====
+
+    fn configured(model_id: &str) -> BedrockProvider {
+        let model =
+            crate::model::RuntimeBedrockModel::new("Configured", model_id, 1_000_000, 16_000)
+                .unwrap();
+        BedrockProvider::with_bedrock_client(Arc::new(TestBedrockClient::new()), model)
+    }
+
+    #[test]
+    fn runtime_request_uses_exact_target() {
+        let target = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/example";
+        let provider = configured(target).with_inference_profile(InferenceProfile::Global);
+        assert_eq!(
+            provider.build_request(vec![], vec![], None).model_id,
+            target
+        );
+    }
+
+    #[test]
+    fn adaptive_and_disabled_fields_are_distinct_from_omission() {
+        let provider = configured("us.anthropic.claude-opus-5")
+            .with_adaptive_thinking()
+            .with_thinking_effort("high");
+        assert!(provider.validate_configuration().is_ok());
+        let fields = build_additional_model_fields(
+            provider.top_k,
+            provider.thinking_config,
+            &provider.additional_fields,
+        )
+        .unwrap();
+        let fields = conversion::document_to_json(&fields);
+        assert_eq!(fields["thinking"]["type"], "adaptive");
+        assert_eq!(fields["output_config"]["effort"], "high");
+        assert!(fields["thinking"].get("budget_tokens").is_none());
+        let disabled = provider.with_disabled_thinking();
+        assert!(disabled.validate_configuration().is_ok());
+        let fields = build_additional_model_fields(
+            None,
+            disabled.thinking_config,
+            &disabled.additional_fields,
+        )
+        .unwrap();
+        assert_eq!(
+            conversion::document_to_json(&fields)["thinking"]["type"],
+            "disabled"
+        );
+        assert!(build_additional_model_fields(None, None, &HashMap::new()).is_none());
+    }
+
+    #[test]
+    fn unsupported_modes_limits_and_api_combinations_are_rejected() {
+        assert!(configured("us.anthropic.claude-opus-5")
+            .with_thinking(2048)
+            .validate_configuration()
+            .is_err());
+        assert!(configured("us.anthropic.claude-opus-5")
+            .with_disabled_thinking()
+            .with_thinking_effort("max")
+            .validate_configuration()
+            .is_err());
+        assert!(configured("us.anthropic.claude-haiku-4-5-20251001-v1:0")
+            .with_adaptive_thinking()
+            .validate_configuration()
+            .is_err());
+        assert!(configured("us.anthropic.claude-fable-5-1")
+            .with_disabled_thinking()
+            .validate_configuration()
+            .is_err());
+        assert!(configured("us.moonshotai.kimi-k3")
+            .validate_configuration()
+            .is_err());
+        assert!(configured("anthropic.claude-opus-5")
+            .validate_configuration()
+            .is_err());
+        assert!(configured("us.anthropic.claude-opus-5")
+            .with_max_tokens(0)
+            .validate_configuration()
+            .is_err());
+        assert!(configured("us.anthropic.claude-opus-5")
+            .with_max_tokens(16_001)
+            .validate_configuration()
+            .is_err());
+        assert!(configured("test.model")
+            .with_temperature(f32::NAN)
+            .validate_configuration()
+            .is_err());
+        assert!(configured("test.model")
+            .with_top_p(f32::INFINITY)
+            .validate_configuration()
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn invalid_configuration_never_dispatches_to_either_api() {
+        let client = Arc::new(TestBedrockClient::new());
+        let provider =
+            BedrockProvider::with_bedrock_client(client.clone(), TEST_MODEL).with_max_tokens(-1);
+        assert!(provider
+            .generate(vec![Message::user("fixture")], vec![], None)
+            .await
+            .is_err());
+        assert!(provider
+            .generate_stream(vec![Message::user("fixture")], vec![], None)
+            .await
+            .is_err());
+        assert_eq!(*client.converse_call_count.lock().unwrap(), 0);
+        assert_eq!(*client.stream_call_count.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn model_and_exact_profile_target_remain_separate() {
+        let arn = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/example";
+        let provider = configured("anthropic.claude-opus-5")
+            .with_inference_target(arn)
+            .unwrap()
+            .with_adaptive_thinking();
+        assert!(provider.validate_configuration().is_ok());
+        assert_eq!(provider.build_request(vec![], vec![], None).model_id, arn);
+        assert_eq!(
+            provider.invocation("converse").requested_model,
+            "anthropic.claude-opus-5"
+        );
+        assert!(configured("anthropic.claude-opus-5")
+            .with_inference_target("us.anthropic.claude-sonnet-5")
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn invocation_records_measure_requests_without_fabricating_identity() {
+        let response = ConverseOutput::builder()
+            .output(aws_sdk_bedrockruntime::types::ConverseOutput::Message(
+                BedrockMessage::builder()
+                    .role(aws_sdk_bedrockruntime::types::ConversationRole::Assistant)
+                    .content(aws_sdk_bedrockruntime::types::ContentBlock::Text(
+                        "fixture answer".into(),
+                    ))
+                    .build()
+                    .unwrap(),
+            ))
+            .stop_reason(aws_sdk_bedrockruntime::types::StopReason::EndTurn)
+            .usage(
+                aws_sdk_bedrockruntime::types::TokenUsage::builder()
+                    .input_tokens(10)
+                    .output_tokens(4)
+                    .total_tokens(14)
+                    .cache_read_input_tokens(2)
+                    .cache_write_input_tokens(0)
+                    .build()
+                    .unwrap(),
+            )
+            .metrics(
+                aws_sdk_bedrockruntime::types::ConverseMetrics::builder()
+                    .latency_ms(12)
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
+        // This fixture queue pops from the end: one retry, then a good response.
+        let client = TestBedrockClient::new()
+            .with_converse_response(Ok(response))
+            .with_converse_response(Err(ProviderError::RateLimited("fixture only".into())));
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let sink = records.clone();
+        let provider = BedrockProvider::with_bedrock_client(Arc::new(client), TEST_MODEL)
+            .with_max_retries(2)
+            .with_base_retry_delay(Duration::ZERO)
+            .with_invocation_callback(move |record| sink.lock().unwrap().push(record));
+        provider
+            .generate(
+                vec![Message::user("not-for-operational-logs")],
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+        let records = records.lock().unwrap();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.requested_model, TEST_MODEL.bedrock_id());
+        assert_eq!(record.dispatched_target, TEST_MODEL.bedrock_id());
+        assert_eq!(record.api, "converse");
+        assert_eq!(record.attempts, 2);
+        assert_eq!(record.outcome, InvocationOutcome::Completed);
+        assert_eq!(record.provider_latency_ms, Some(12));
+        assert!(record.provider_reported_model.is_none());
+        assert!(record.request_id.is_none());
+        assert!(record.sdk_retry_count.is_none());
+        assert_eq!(
+            record.usage.as_ref().unwrap().cache_read_input_tokens,
+            Some(2)
+        );
+        assert_eq!(
+            record.usage.as_ref().unwrap().cache_write_input_tokens,
+            Some(0)
+        );
+        let json = serde_json::to_string(record).unwrap();
+        assert!(!json.contains("not-for-operational-logs"));
+        assert!(!json.contains("fixture answer"));
+    }
+
+    #[tokio::test]
+    async fn failed_invocations_are_recorded_without_invented_usage() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let sink = records.clone();
+        let client = TestBedrockClient::new().with_converse_response(Err(ProviderError::Model(
+            "fixture-only-failure-detail".into(),
+        )));
+        let provider = BedrockProvider::with_bedrock_client(Arc::new(client), TEST_MODEL)
+            .with_invocation_callback(move |record| sink.lock().unwrap().push(record));
+        assert!(provider
+            .generate(vec![Message::user("fixture")], vec![], None)
+            .await
+            .is_err());
+        let records = records.lock().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].outcome, InvocationOutcome::Failed);
+        assert!(records[0].usage.is_none());
+        assert!(!serde_json::to_string(&records[0])
+            .unwrap()
+            .contains("fixture-only-failure-detail"));
     }
 
     // ===== build_additional_model_fields Tests =====

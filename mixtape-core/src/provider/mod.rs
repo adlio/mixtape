@@ -33,6 +33,10 @@ pub enum StreamEvent {
     ToolUse(ToolUseBlock),
     /// Incremental thinking delta (extended thinking)
     ThinkingDelta(String),
+    /// A complete content block for conversation replay, in provider order.
+    /// Providers emitting this event must emit every block, including text and
+    /// tools. TextDelta/ToolUse remain available for existing streaming consumers.
+    ContentBlock(crate::types::ContentBlock),
     /// Streaming stopped
     Stop {
         /// Why the model stopped
@@ -151,29 +155,19 @@ pub trait ModelProvider: Send + Sync {
         // Default implementation: call generate and return complete response
         let response = self.generate(messages, tools, system_prompt).await?;
 
-        // Extract text content and tool uses from response message
-        let mut text_content = String::new();
-        let mut tool_uses = Vec::new();
-
-        for content in &response.message.content {
-            match content {
+        // Display deltas are separate from the complete, ordered replay content.
+        let mut events = Vec::new();
+        for block in response.message.content {
+            match &block {
                 crate::types::ContentBlock::Text(text) => {
-                    text_content.push_str(text);
+                    events.push(Ok(StreamEvent::TextDelta(text.clone())));
                 }
                 crate::types::ContentBlock::ToolUse(tool_use) => {
-                    tool_uses.push(tool_use.clone());
+                    events.push(Ok(StreamEvent::ToolUse(tool_use.clone())));
                 }
                 _ => {}
             }
-        }
-
-        // Create a stream with the complete response
-        let mut events = Vec::new();
-        if !text_content.is_empty() {
-            events.push(Ok(StreamEvent::TextDelta(text_content)));
-        }
-        for tool_use in tool_uses {
-            events.push(Ok(StreamEvent::ToolUse(tool_use)));
+            events.push(Ok(StreamEvent::ContentBlock(block)));
         }
         events.push(Ok(StreamEvent::Stop {
             stop_reason: response.stop_reason,

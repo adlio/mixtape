@@ -161,6 +161,7 @@ pub use events::{AgentEvent, AgentHook, HookId, TokenUsage};
 
 pub use model::{
     AnthropicModel, BedrockModel, InferenceProfile, Model, ModelRequest, ModelResponse,
+    RuntimeBedrockModel,
 };
 
 // Permission system

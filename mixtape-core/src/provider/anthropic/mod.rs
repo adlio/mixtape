@@ -58,7 +58,7 @@ fn classify_anthropic_error(err: &AnthropicError) -> ProviderError {
 pub struct AnthropicProvider {
     client: Anthropic,
     model_id: String,
-    model_name: &'static str,
+    model_name: String,
     max_context_tokens: usize,
     max_output_tokens: usize,
     max_tokens: i32,
@@ -76,7 +76,7 @@ impl Clone for AnthropicProvider {
         Self {
             client: self.client.clone(),
             model_id: self.model_id.clone(),
-            model_name: self.model_name,
+            model_name: self.model_name.clone(),
             max_context_tokens: self.max_context_tokens,
             max_output_tokens: self.max_output_tokens,
             max_tokens: self.max_tokens,
@@ -130,7 +130,7 @@ impl AnthropicProvider {
         Self {
             client,
             model_id: model.anthropic_id().to_string(),
-            model_name: model.name(),
+            model_name: model.name().to_owned(),
             max_context_tokens: model.max_context_tokens(),
             max_output_tokens: model.max_output_tokens(),
             max_tokens: DEFAULT_MAX_TOKENS,
@@ -310,7 +310,7 @@ impl AnthropicProvider {
 #[async_trait::async_trait]
 impl ModelProvider for AnthropicProvider {
     fn name(&self) -> &str {
-        self.model_name
+        &self.model_name
     }
 
     fn max_context_tokens(&self) -> usize {

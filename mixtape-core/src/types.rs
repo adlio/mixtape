@@ -120,6 +120,9 @@ pub enum ContentBlock {
         /// Signature for multi-turn thinking verification
         signature: String,
     },
+    /// Opaque, base64-encoded reasoning returned by the provider. Replay unchanged
+    /// to the same model; this is not text and must not be shown as answer content.
+    RedactedThinking { data: String },
 }
 
 /// A tool use request from the model

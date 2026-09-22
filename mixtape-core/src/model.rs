@@ -7,6 +7,9 @@
 //! Models are simple structs that implement these traits. All API interaction
 //! goes through the provider (e.g., `BedrockProvider`).
 
+mod runtime;
+pub use runtime::RuntimeBedrockModel;
+
 use crate::events::TokenUsage;
 use crate::types::{ContentBlock, Message, StopReason, ToolDefinition};
 
@@ -39,7 +42,7 @@ pub struct ModelResponse {
 /// context window whether accessed via Bedrock or Anthropic.
 pub trait Model: Send + Sync {
     /// Human-readable model name (e.g., "Claude Sonnet 4.5")
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 
     /// Maximum input context tokens
     fn max_context_tokens(&self) -> usize;
@@ -101,6 +104,7 @@ pub trait Model: Send + Sync {
                     }
                     + 10 // Structure overhead
             }
+            ContentBlock::RedactedThinking { data } => self.estimate_token_count(data) + 10,
             ContentBlock::Thinking {
                 thinking,
                 signature,
@@ -149,8 +153,16 @@ pub enum InferenceProfile {
 impl InferenceProfile {
     /// Apply this inference profile to a base model ID
     ///
-    /// Returns the full model ID to use with Bedrock API.
+    /// Returns the full model ID to use with Bedrock API. An already-qualified
+    /// profile ID or ARN is an exact target and is never prefixed or rerouted.
     pub fn apply_to(&self, base_model_id: &str) -> String {
+        if base_model_id.starts_with("arn:")
+            || ["us.", "eu.", "apac.", "au.", "in.", "jp.", "global."]
+                .iter()
+                .any(|prefix| base_model_id.starts_with(prefix))
+        {
+            return base_model_id.to_owned();
+        }
         match self.prefix() {
             Some(prefix) => format!("{}.{}", prefix, base_model_id),
             None => base_model_id.to_string(),
@@ -177,7 +189,7 @@ pub trait BedrockModel: Model {
     ///
     /// This is the full model identifier used in Bedrock API calls,
     /// e.g., "anthropic.claude-sonnet-4-5-20250929-v1:0"
-    fn bedrock_id(&self) -> &'static str;
+    fn bedrock_id(&self) -> &str;
 
     /// The default inference profile for this model
     ///

@@ -17,6 +17,7 @@ use aws_sdk_bedrockruntime::{
     },
 };
 use aws_smithy_types::Document;
+use base64::Engine;
 
 // ===== Type Conversion: Mixtape -> Bedrock =====
 
@@ -42,6 +43,18 @@ pub fn to_bedrock_message(msg: &Message) -> Result<BedrockMessage, ProviderError
 fn to_bedrock_content_block(block: &ContentBlock) -> Result<BedrockContentBlock, ProviderError> {
     match block {
         ContentBlock::Text(text) => Ok(BedrockContentBlock::Text(text.clone())),
+        ContentBlock::RedactedThinking { data } => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map_err(|_| {
+                    ProviderError::Configuration("Redacted reasoning is not valid base64".into())
+                })?;
+            Ok(BedrockContentBlock::ReasoningContent(
+                aws_sdk_bedrockruntime::types::ReasoningContentBlock::RedactedContent(Blob::new(
+                    bytes,
+                )),
+            ))
+        }
         ContentBlock::ToolUse(tool_use) => {
             let input_doc = json_to_document(&tool_use.input);
             let block = BedrockToolUseBlock::builder()
@@ -88,13 +101,18 @@ fn to_bedrock_content_block(block: &ContentBlock) -> Result<BedrockContentBlock,
                 .map_err(|e| ProviderError::Configuration(e.to_string()))?;
             Ok(BedrockContentBlock::ToolResult(block))
         }
-        ContentBlock::Thinking { thinking, .. } => {
-            // Pass thinking blocks as text for multi-turn conversations
-            // Bedrock handles thinking through additionalModelRequestFields
-            Ok(BedrockContentBlock::Text(format!(
-                "<thinking>{}</thinking>",
-                thinking
-            )))
+        ContentBlock::Thinking {
+            thinking,
+            signature,
+        } => {
+            let reasoning = aws_sdk_bedrockruntime::types::ReasoningTextBlock::builder()
+                .text(thinking)
+                .set_signature((!signature.is_empty()).then(|| signature.clone()))
+                .build()
+                .map_err(|e| ProviderError::Configuration(e.to_string()))?;
+            Ok(BedrockContentBlock::ReasoningContent(
+                aws_sdk_bedrockruntime::types::ReasoningContentBlock::ReasoningText(reasoning),
+            ))
         }
     }
 }
@@ -191,6 +209,17 @@ fn from_bedrock_content_block(block: &BedrockContentBlock) -> Option<ContentBloc
                 input,
             }))
         }
+        BedrockContentBlock::ReasoningContent(
+            aws_sdk_bedrockruntime::types::ReasoningContentBlock::ReasoningText(reasoning),
+        ) => Some(ContentBlock::Thinking {
+            thinking: reasoning.text().to_owned(),
+            signature: reasoning.signature().unwrap_or_default().to_owned(),
+        }),
+        BedrockContentBlock::ReasoningContent(
+            aws_sdk_bedrockruntime::types::ReasoningContentBlock::RedactedContent(bytes),
+        ) => Some(ContentBlock::RedactedThinking {
+            data: base64::engine::general_purpose::STANDARD.encode(bytes.as_ref()),
+        }),
         _ => None, // Skip other content types (images, etc.)
     }
 }
@@ -219,6 +248,9 @@ pub fn document_to_json(doc: &Document) -> serde_json::Value {
 }
 
 pub fn from_bedrock_stop_reason(reason: &aws_sdk_bedrockruntime::types::StopReason) -> StopReason {
+    if matches!(reason.as_str(), "refusal" | "guardrail_intervened") {
+        return StopReason::ContentFiltered;
+    }
     match reason {
         aws_sdk_bedrockruntime::types::StopReason::EndTurn => StopReason::EndTurn,
         aws_sdk_bedrockruntime::types::StopReason::ToolUse => StopReason::ToolUse,
@@ -662,14 +694,24 @@ mod tests {
 
         let bedrock_block = to_bedrock_content_block(&block).unwrap();
 
-        // Thinking blocks are converted to text with <thinking> tags for Bedrock
-        match bedrock_block {
-            BedrockContentBlock::Text(text) => {
-                assert!(text.contains("<thinking>"));
-                assert!(text.contains("Let me analyze this problem..."));
-                assert!(text.contains("</thinking>"));
+        match &bedrock_block {
+            BedrockContentBlock::ReasoningContent(
+                aws_sdk_bedrockruntime::types::ReasoningContentBlock::ReasoningText(reasoning),
+            ) => {
+                assert_eq!(reasoning.text(), "Let me analyze this problem...");
+                assert_eq!(reasoning.signature(), Some("sig_abc123"));
             }
-            _ => panic!("Expected Text block for thinking"),
+            _ => panic!("Expected signed reasoning, not ordinary text"),
+        }
+        match from_bedrock_content_block(&bedrock_block).unwrap() {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } => {
+                assert_eq!(thinking, "Let me analyze this problem...");
+                assert_eq!(signature, "sig_abc123");
+            }
+            _ => panic!("Reasoning must survive the response conversion"),
         }
     }
 
@@ -784,5 +826,30 @@ mod tests {
         assert_eq!(msg.content.len(), 2);
         assert!(matches!(&msg.content[0], ContentBlock::Text(_)));
         assert!(matches!(&msg.content[1], ContentBlock::ToolUse(_)));
+    }
+}
+
+#[cfg(test)]
+mod reasoning_roundtrip_tests {
+    use super::*;
+
+    #[test]
+    fn redacted_reasoning_round_trips_without_becoming_text() {
+        let block = ContentBlock::RedactedThinking {
+            data: base64::engine::general_purpose::STANDARD.encode([0, 255, 128, 1]),
+        };
+        let encoded = to_bedrock_content_block(&block).unwrap();
+        let decoded = from_bedrock_content_block(&encoded).unwrap();
+        assert!(matches!(decoded, ContentBlock::RedactedThinking { data }
+            if base64::engine::general_purpose::STANDARD.decode(&data).unwrap() == [0, 255, 128, 1]));
+    }
+
+    #[test]
+    fn invalid_opaque_content_is_rejected_without_echoing_it() {
+        let error = to_bedrock_content_block(&ContentBlock::RedactedThinking {
+            data: "invalid opaque data!".into(),
+        })
+        .unwrap_err();
+        assert!(!error.to_string().contains("invalid opaque data!"));
     }
 }

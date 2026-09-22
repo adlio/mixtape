@@ -104,6 +104,14 @@ pub trait Model: Send + Sync {
                     }
                     + 10 // Structure overhead
             }
+            ContentBlock::ResponsesReplay(replay) => {
+                replay
+                    .items
+                    .iter()
+                    .map(|item| self.estimate_token_count(&item.to_string()))
+                    .sum::<usize>()
+                    + 10
+            }
             ContentBlock::RedactedThinking { data } => self.estimate_token_count(data) + 10,
             ContentBlock::Thinking {
                 thinking,

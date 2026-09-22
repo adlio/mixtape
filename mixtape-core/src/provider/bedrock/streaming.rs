@@ -1,5 +1,38 @@
 //! Lossless assembly of ConverseStream content, separate from network I/O.
 
+/// Adapts SDK events without reconnecting. The guard is owned from construction,
+/// so dropping an unpolled stream is cancellation rather than missing telemetry.
+pub(super) fn observe_stream(
+    mut source: futures::stream::BoxStream<'static, Result<ConverseStreamOutput, ProviderError>>,
+    mut guard: super::telemetry::InvocationGuard,
+) -> futures::stream::BoxStream<'static, Result<StreamEvent, ProviderError>> {
+    use super::InvocationOutcome;
+    use futures::StreamExt;
+    Box::pin(async_stream::stream! {
+        let mut assembler = StreamAssembler::default();
+        while let Some(event) = source.next().await {
+            let result = event.and_then(|event| assembler.push(event));
+            assembler.update_invocation(&mut guard.record);
+            match result {
+                Ok(events) => for event in events { yield Ok(event); },
+                Err(error) => {
+                    guard.finish(InvocationOutcome::Failed);
+                    yield Err(error);
+                    return;
+                }
+            }
+        }
+        match assembler.finish() {
+            Ok(events) => {
+                let outcome = super::telemetry::stop_outcome(guard.record.provider_stop_reason.as_deref().unwrap_or("unknown"));
+                guard.finish(outcome);
+                for event in events { yield Ok(event); }
+            }
+            Err(error) => { guard.finish(InvocationOutcome::Failed); yield Err(error); }
+        }
+    })
+}
+
 use std::collections::BTreeMap;
 
 use aws_sdk_bedrockruntime::types::{

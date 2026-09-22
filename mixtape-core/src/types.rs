@@ -107,8 +107,8 @@ impl Message {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
-    /// Text content
-    Text(String),
+    /// Text content, serialized as `{"type":"text","text":"..."}`.
+    Text(#[serde(with = "text_block")] String),
     /// Tool use request from assistant
     ToolUse(ToolUseBlock),
     /// Tool result from user
@@ -123,6 +123,50 @@ pub enum ContentBlock {
     /// Opaque, base64-encoded reasoning returned by the provider. Replay unchanged
     /// to the same model; this is not text and must not be shown as answer content.
     RedactedThinking { data: String },
+    /// Complete Responses API output items, paired with the normal text/tool
+    /// blocks in this message. The Responses adapter verifies those projections
+    /// before replaying the original items. Other APIs must reject this state.
+    ResponsesReplay(ResponsesReplay),
+}
+
+// Internally tagged enums require newtype payloads to serialize as maps, not
+// bare strings. Adapt only Text so existing tool/reasoning records stay compatible.
+mod text_block {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(text: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Text<'a> {
+            text: &'a str,
+        }
+        Text { text }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+        #[derive(Deserialize)]
+        struct Text {
+            text: String,
+        }
+        Ok(Text::deserialize(deserializer)?.text)
+    }
+}
+
+/// Lossless protocol state for a Responses assistant turn. This retains item IDs,
+/// message phases, and encrypted reasoning that cannot be represented as text.
+/// Keep it with the same model and endpoint; never render it as answer content.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ResponsesReplay {
+    pub model_id: String,
+    pub items: Vec<Value>,
+}
+
+impl std::fmt::Debug for ResponsesReplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResponsesReplay")
+            .field("model_id", &self.model_id)
+            .field("item_count", &self.items.len())
+            .finish_non_exhaustive()
+    }
 }
 
 /// A tool use request from the model
@@ -215,6 +259,67 @@ impl ThinkingConfig {
 mod tests {
     use super::*;
     use crate::tool::ToolResult;
+
+    #[test]
+    fn text_blocks_have_a_roundtrippable_tagged_object() {
+        for text in ["", "hello", "unicode λ\nsecond line"] {
+            let block = ContentBlock::Text(text.into());
+            let encoded = serde_json::to_value(&block).unwrap();
+            assert_eq!(encoded, serde_json::json!({"type":"text", "text":text}));
+            let restored: ContentBlock = serde_json::from_value(encoded).unwrap();
+            assert!(matches!(restored, ContentBlock::Text(value) if value == text));
+        }
+        for malformed in [
+            serde_json::json!({"type":"text"}),
+            serde_json::json!({"type":"text", "text":null}),
+            serde_json::json!({"type":"text", "text":17}),
+        ] {
+            assert!(serde_json::from_value::<ContentBlock>(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn mixed_history_roundtrips_without_changing_existing_block_shapes() {
+        let message = Message::assistant_with_content(vec![
+            ContentBlock::Thinking {
+                thinking: String::new(),
+                signature: "fixture-signature".into(),
+            },
+            ContentBlock::Text("checking".into()),
+            ContentBlock::RedactedThinking {
+                data: "Zml4dHVyZQ==".into(),
+            },
+            ContentBlock::ToolUse(ToolUseBlock {
+                id: "call-1".into(),
+                name: "count".into(),
+                input: serde_json::json!({"n":7}),
+            }),
+            ContentBlock::ResponsesReplay(ResponsesReplay {
+                model_id: "fixture".into(),
+                items: vec![
+                    serde_json::json!({"id":"rs-1","type":"reasoning","summary":[],"encrypted_content":"fixture"}),
+                ],
+            }),
+        ]);
+        let encoded = serde_json::to_value(&message).unwrap();
+        assert_eq!(
+            encoded["content"][0],
+            serde_json::json!({"type":"thinking","thinking":"","signature":"fixture-signature"})
+        );
+        assert_eq!(
+            encoded["content"][3],
+            serde_json::json!({"type":"tool_use","id":"call-1","name":"count","input":{"n":7}})
+        );
+        assert_eq!(encoded["content"][4]["type"], "responses_replay");
+        let restored: Message = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(serde_json::to_value(restored).unwrap(), encoded);
+        let user = Message::user("synthetic input");
+        let encoded = serde_json::to_vec(&user).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Message>(&encoded).unwrap().text(),
+            "synthetic input"
+        );
+    }
 
     #[test]
     fn test_role_display() {

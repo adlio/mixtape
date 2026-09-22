@@ -35,6 +35,9 @@ pub fn to_anthropic_message(msg: &Message) -> Result<MessageParam, ProviderError
 
 fn to_anthropic_content_block(block: &ContentBlock) -> Result<ContentBlockParam, ProviderError> {
     match block {
+        ContentBlock::ResponsesReplay(_) => Err(ProviderError::Configuration(
+            "Responses history cannot be replayed through the Anthropic API".into(),
+        )),
         ContentBlock::Text(text) => Ok(ContentBlockParam::Text {
             text: text.clone(),
             cache_control: None,

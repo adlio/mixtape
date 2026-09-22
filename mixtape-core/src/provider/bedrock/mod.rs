@@ -1,9 +1,19 @@
 //! AWS Bedrock provider implementation
 
+#[cfg(test)]
+mod cancellation_tests;
+mod chat_completions;
+mod controls;
 mod conversion;
+mod openai_controls;
+mod responses;
 mod streaming;
 mod telemetry;
 
+pub use responses::{BedrockResponsesCache, BedrockResponsesCacheMode, BedrockResponsesProvider};
+
+pub use chat_completions::BedrockChatCompletionsProvider;
+pub use controls::{BedrockCacheTtl, BedrockJsonSchema, BedrockPromptCache, BedrockToolChoice};
 pub use telemetry::{BedrockInvocation, InvocationOutcome, InvocationUsage};
 
 use super::retry::{retry_with_backoff, RetryCallback, RetryConfig, RetryInfo};
@@ -28,9 +38,9 @@ use conversion::{
 use futures::stream::BoxStream;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // ===== Error Handling Helpers =====
 
@@ -174,6 +184,7 @@ pub use crate::model::InferenceProfile;
 // ===== Internal Request Type =====
 
 /// Request parameters for converse API calls (using Bedrock types internally)
+#[derive(Clone)]
 struct ConverseRequest {
     model_id: String,
     messages: Vec<BedrockMessage>,
@@ -183,8 +194,10 @@ struct ConverseRequest {
     top_k: Option<u32>,
     thinking_config: Option<ThinkingConfig>,
     additional_fields: HashMap<String, serde_json::Value>,
-    system_prompt: Option<String>,
+    system: Vec<SystemContentBlock>,
     tools: Vec<BedrockTool>,
+    tool_choice: Option<aws_sdk_bedrockruntime::types::ToolChoice>,
+    output_config: Option<aws_sdk_bedrockruntime::types::OutputConfig>,
 }
 
 /// Trait for interacting with Bedrock API
@@ -239,14 +252,16 @@ impl BedrockClient for SdkBedrockClient {
                     .build(),
             );
 
-        if let Some(prompt) = req.system_prompt {
-            request = request.system(SystemContentBlock::Text(prompt));
+        if !req.system.is_empty() {
+            request = request.set_system(Some(req.system));
         }
+        request = request.set_output_config(req.output_config);
 
         if !req.tools.is_empty() {
             request = request.tool_config(
                 ToolConfiguration::builder()
                     .set_tools(Some(req.tools))
+                    .set_tool_choice(req.tool_choice)
                     .build()
                     .map_err(|e| ProviderError::Configuration(e.to_string()))?,
             );
@@ -279,14 +294,16 @@ impl BedrockClient for SdkBedrockClient {
                     .build(),
             );
 
-        if let Some(prompt) = req.system_prompt {
-            request = request.system(SystemContentBlock::Text(prompt));
+        if !req.system.is_empty() {
+            request = request.set_system(Some(req.system));
         }
+        request = request.set_output_config(req.output_config);
 
         if !req.tools.is_empty() {
             request = request.tool_config(
                 ToolConfiguration::builder()
                     .set_tools(Some(req.tools))
+                    .set_tool_choice(req.tool_choice)
                     .build()
                     .map_err(|e| ProviderError::Configuration(e.to_string()))?,
             );
@@ -371,6 +388,9 @@ pub struct BedrockProvider {
     retry_config: RetryConfig,
     on_retry: Option<RetryCallback>,
     on_invocation: Option<Arc<dyn Fn(BedrockInvocation) + Send + Sync>>,
+    prompt_cache: BedrockPromptCache,
+    tool_choice: Option<BedrockToolChoice>,
+    output_schema: Option<BedrockJsonSchema>,
 }
 
 impl BedrockProvider {
@@ -402,6 +422,9 @@ impl Clone for BedrockProvider {
             retry_config: self.retry_config.clone(),
             on_retry: self.on_retry.clone(),
             on_invocation: self.on_invocation.clone(),
+            prompt_cache: self.prompt_cache.clone(),
+            tool_choice: self.tool_choice.clone(),
+            output_schema: self.output_schema.clone(),
         }
     }
 }
@@ -446,6 +469,9 @@ impl BedrockProvider {
             retry_config: RetryConfig::default(),
             on_retry: None,
             on_invocation: None,
+            prompt_cache: BedrockPromptCache::default(),
+            tool_choice: None,
+            output_schema: None,
         })
     }
 
@@ -468,6 +494,9 @@ impl BedrockProvider {
             retry_config: RetryConfig::default(),
             on_retry: None,
             on_invocation: None,
+            prompt_cache: BedrockPromptCache::default(),
+            tool_choice: None,
+            output_schema: None,
         }
     }
 
@@ -491,6 +520,9 @@ impl BedrockProvider {
             retry_config: RetryConfig::default(),
             on_retry: None,
             on_invocation: None,
+            prompt_cache: BedrockPromptCache::default(),
+            tool_choice: None,
+            output_schema: None,
         }
     }
 
@@ -549,6 +581,26 @@ impl BedrockProvider {
         }
         self.inference_target = Some(target);
         Ok(self)
+    }
+
+    /// Place explicit Converse cache checkpoints. Cache eligibility and actual
+    /// hits are determined by Bedrock; no cache use is inferred from this setting.
+    pub fn with_prompt_cache(mut self, cache: BedrockPromptCache) -> Self {
+        self.prompt_cache = cache;
+        self
+    }
+
+    /// Select automatic, disabled, or forced tools where the model supports it.
+    pub fn with_tool_choice(mut self, choice: BedrockToolChoice) -> Self {
+        self.tool_choice = Some(choice);
+        self
+    }
+
+    /// Request native JSON schema output on a model with a verified contract.
+    /// Applications must still validate the response before persisting a summary.
+    pub fn with_output_schema(mut self, schema: BedrockJsonSchema) -> Self {
+        self.output_schema = Some(schema);
+        self
     }
 
     /// Set the maximum number of tokens to generate per request
@@ -674,6 +726,13 @@ impl BedrockProvider {
         let model_id = descriptor
             .map(|value| value.model_id)
             .unwrap_or(&self.base_model_id);
+        controls::validate(
+            model_id,
+            &self.prompt_cache,
+            self.tool_choice.as_ref(),
+            self.output_schema.as_ref(),
+            thinking,
+        )?;
         if model_id == "anthropic.claude-opus-4-7"
             && (self.temperature.is_some() || self.top_p.is_some() || fields.get("top_k").is_some())
         {
@@ -943,8 +1002,9 @@ impl BedrockProvider {
 
     /// Observe provider calls using metadata-only records. A completed protocol
     /// response still needs application-level summary validation. The callback
-    /// should return promptly and must not panic. Dropping a stream before it is
-    /// consumed is not a completed call and does not produce a completion record.
+    /// should return promptly and must not panic, including on cancellation.
+    /// Dropping a request or stream before completion produces one Cancelled
+    /// record; SDK-internal retry counts remain unknown.
     pub fn with_invocation_callback<F>(mut self, callback: F) -> Self
     where
         F: Fn(BedrockInvocation) + Send + Sync + 'static,
@@ -962,10 +1022,8 @@ impl BedrockProvider {
         )
     }
 
-    fn observe(&self, record: BedrockInvocation) {
-        if let Some(callback) = &self.on_invocation {
-            callback(record);
-        }
+    fn guard(&self, api: &'static str) -> telemetry::InvocationGuard {
+        telemetry::InvocationGuard::new(self.invocation(api), self.on_invocation.clone(), None)
     }
 
     fn build_request(
@@ -973,8 +1031,8 @@ impl BedrockProvider {
         messages: Vec<BedrockMessage>,
         tools: Vec<BedrockTool>,
         system_prompt: Option<String>,
-    ) -> ConverseRequest {
-        ConverseRequest {
+    ) -> Result<ConverseRequest, ProviderError> {
+        let mut request = ConverseRequest {
             model_id: self.effective_model_id(),
             messages,
             max_tokens: self.max_tokens,
@@ -983,9 +1041,21 @@ impl BedrockProvider {
             top_k: self.top_k,
             thinking_config: self.thinking_config,
             additional_fields: self.additional_fields.clone(),
-            system_prompt,
+            system: system_prompt
+                .into_iter()
+                .map(SystemContentBlock::Text)
+                .collect(),
             tools,
-        }
+            tool_choice: None,
+            output_config: None,
+        };
+        controls::apply(
+            &mut request,
+            &self.prompt_cache,
+            self.tool_choice.as_ref(),
+            self.output_schema.as_ref(),
+        )?;
+        Ok(request)
     }
 }
 
@@ -1021,17 +1091,12 @@ impl ModelProvider for BedrockProvider {
             .map(to_bedrock_tool)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let started = Instant::now();
-        let attempts = AtomicUsize::new(0);
-        let mut record = self.invocation("converse");
+        let request = self.build_request(bedrock_messages, bedrock_tools, system_prompt)?;
+        let mut guard = self.guard("converse");
         let response = retry_with_backoff(
             || {
-                attempts.fetch_add(1, Ordering::Relaxed);
-                self.client.converse(self.build_request(
-                    bedrock_messages.clone(),
-                    bedrock_tools.clone(),
-                    system_prompt.clone(),
-                ))
+                guard.attempts.fetch_add(1, Ordering::Relaxed);
+                self.client.converse(request.clone())
             },
             &self.retry_config,
             &self.on_retry,
@@ -1040,19 +1105,14 @@ impl ModelProvider for BedrockProvider {
         let response = match response {
             Ok(response) => response,
             Err(error) => {
-                record.finish(
-                    started,
-                    attempts.load(Ordering::Relaxed),
-                    InvocationOutcome::Failed,
-                );
-                self.observe(record);
+                guard.finish(InvocationOutcome::Failed);
                 return Err(error);
             }
         };
-        record.request_id = response.request_id().map(str::to_owned);
-        record.provider_stop_reason = Some(response.stop_reason.as_str().to_owned());
-        record.usage = response.usage.as_ref().map(InvocationUsage::from_bedrock);
-        record.provider_latency_ms = response
+        guard.record.request_id = response.request_id().map(str::to_owned);
+        guard.record.provider_stop_reason = Some(response.stop_reason.as_str().to_owned());
+        guard.record.usage = response.usage.as_ref().map(InvocationUsage::from_bedrock);
+        guard.record.provider_latency_ms = response
             .metrics
             .as_ref()
             .and_then(|metrics| u64::try_from(metrics.latency_ms).ok());
@@ -1091,8 +1151,7 @@ impl ModelProvider for BedrockProvider {
         } else {
             InvocationOutcome::Failed
         };
-        record.finish(started, attempts.load(Ordering::Relaxed), outcome);
-        self.observe(record);
+        guard.finish(outcome);
         result
     }
 
@@ -1114,17 +1173,12 @@ impl ModelProvider for BedrockProvider {
             .map(to_bedrock_tool)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let started = Instant::now();
-        let attempts = AtomicUsize::new(0);
-        let mut record = self.invocation("converse_stream");
+        let request = self.build_request(bedrock_messages, bedrock_tools, system_prompt)?;
+        let mut guard = self.guard("converse_stream");
         let output = retry_with_backoff(
             || {
-                attempts.fetch_add(1, Ordering::Relaxed);
-                self.client.converse_stream(self.build_request(
-                    bedrock_messages.clone(),
-                    bedrock_tools.clone(),
-                    system_prompt.clone(),
-                ))
+                guard.attempts.fetch_add(1, Ordering::Relaxed);
+                self.client.converse_stream(request.clone())
             },
             &self.retry_config,
             &self.on_retry,
@@ -1133,62 +1187,20 @@ impl ModelProvider for BedrockProvider {
         let output = match output {
             Ok(output) => output,
             Err(error) => {
-                record.finish(
-                    started,
-                    attempts.load(Ordering::Relaxed),
-                    InvocationOutcome::Failed,
-                );
-                self.observe(record);
+                guard.finish(InvocationOutcome::Failed);
                 return Err(error);
             }
         };
-        record.request_id = output.request_id().map(str::to_owned);
-        let attempts = attempts.load(Ordering::Relaxed);
-        let on_invocation = self.on_invocation.clone();
+        guard.record.request_id = output.request_id().map(str::to_owned);
         let mut stream = output.stream;
-        let event_stream = async_stream::stream! {
-            let mut assembler = streaming::StreamAssembler::default();
-            loop {
-                match stream.recv().await {
-                    Ok(Some(event)) => match assembler.push(event) {
-                        Ok(events) => {
-                            for event in events { yield Ok(event); }
-                        }
-                        Err(error) => {
-                            assembler.update_invocation(&mut record);
-                            record.finish(started, attempts, InvocationOutcome::Failed);
-                            if let Some(callback) = &on_invocation { callback(record); }
-                            yield Err(error);
-                            return;
-                        }
-                    },
-                    Ok(None) => break,
-                    Err(error) => {
-                        assembler.update_invocation(&mut record);
-                        record.finish(started, attempts, InvocationOutcome::Failed);
-                        if let Some(callback) = &on_invocation { callback(record); }
-                        yield Err(ProviderError::Model(format!("Bedrock response stream failed: {error}")));
-                        return;
-                    }
-                }
-            }
-            assembler.update_invocation(&mut record);
-            match assembler.finish() {
-                Ok(events) => {
-                    let outcome = telemetry::stop_outcome(record.provider_stop_reason.as_deref().unwrap_or("unknown"));
-                    record.finish(started, attempts, outcome);
-                    if let Some(callback) = &on_invocation { callback(record); }
-                    for event in events { yield Ok(event); }
-                }
-                Err(error) => {
-                    record.finish(started, attempts, InvocationOutcome::Failed);
-                    if let Some(callback) = &on_invocation { callback(record); }
-                    yield Err(error);
-                }
+        let events = async_stream::try_stream! {
+            while let Some(event) = stream.recv().await.map_err(|_| {
+                ProviderError::Model("Bedrock response stream failed".into())
+            })? {
+                yield event;
             }
         };
-
-        Ok(Box::pin(event_stream))
+        Ok(streaming::observe_stream(Box::pin(events), guard))
     }
 }
 
@@ -1817,7 +1829,10 @@ mod tests {
         let target = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/example";
         let provider = configured(target).with_inference_profile(InferenceProfile::Global);
         assert_eq!(
-            provider.build_request(vec![], vec![], None).model_id,
+            provider
+                .build_request(vec![], vec![], None)
+                .unwrap()
+                .model_id,
             target
         );
     }
@@ -1921,7 +1936,13 @@ mod tests {
             .unwrap()
             .with_adaptive_thinking();
         assert!(provider.validate_configuration().is_ok());
-        assert_eq!(provider.build_request(vec![], vec![], None).model_id, arn);
+        assert_eq!(
+            provider
+                .build_request(vec![], vec![], None)
+                .unwrap()
+                .model_id,
+            arn
+        );
         assert_eq!(
             provider.invocation("converse").requested_model,
             "anthropic.claude-opus-5"

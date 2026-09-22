@@ -42,6 +42,9 @@ pub fn to_bedrock_message(msg: &Message) -> Result<BedrockMessage, ProviderError
 
 fn to_bedrock_content_block(block: &ContentBlock) -> Result<BedrockContentBlock, ProviderError> {
     match block {
+        ContentBlock::ResponsesReplay(_) => Err(ProviderError::Configuration(
+            "Responses history cannot be replayed through Converse".into(),
+        )),
         ContentBlock::Text(text) => Ok(BedrockContentBlock::Text(text.clone())),
         ContentBlock::RedactedThinking { data } => {
             let bytes = base64::engine::general_purpose::STANDARD

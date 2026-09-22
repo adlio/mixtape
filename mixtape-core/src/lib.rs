@@ -178,7 +178,7 @@ pub use provider::{ModelProvider, ProviderError, RetryConfig, RetryInfo, StreamE
 #[cfg(feature = "anthropic")]
 pub use provider::AnthropicProvider;
 #[cfg(feature = "bedrock")]
-pub use provider::BedrockProvider;
+pub use provider::{BedrockChatCompletionsProvider, BedrockProvider, BedrockResponsesProvider};
 
 // Models — separate `pub use` blocks per vendor so cargo fmt sorts within each
 // block independently rather than merging across vendor boundaries.

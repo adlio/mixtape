@@ -15,7 +15,7 @@ exclude = [".cargo-husky/", ".claude/", ".github/", ".idea/"]
 [features]
 default = []
 session = []
-bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:base64"]
+bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:aws-credential-types", "dep:aws-sigv4", "dep:reqwest", "dep:eventsource-stream", "dep:base64"]
 anthropic = ["dep:mixtape-anthropic-sdk", "dep:base64"]
 mcp = ["dep:rmcp", "dep:reqwest", "dep:shellexpand"]
 test-utils = []
@@ -40,6 +40,9 @@ dirs.workspace = true
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-sigv4 = { workspace = true, optional = true }
+eventsource-stream = { workspace = true, optional = true }
 
 # Anthropic provider (optional)
 mixtape-anthropic-sdk = { workspace = true, optional = true }
@@ -47,7 +50,7 @@ base64 = { workspace = true, optional = true }
 
 # MCP support (optional)
 rmcp = { workspace = true, optional = true }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true, features = ["stream"] }
 shellexpand = { workspace = true, optional = true }
 
 [dev-dependencies]

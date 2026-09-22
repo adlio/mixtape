@@ -13,6 +13,8 @@ pub enum InvocationOutcome {
     Completed,
     Rejected,
     Failed,
+    /// The caller dropped the request or stream before its terminal outcome.
+    Cancelled,
 }
 
 /// Optional counters are unknown when the provider did not report them.
@@ -107,6 +109,64 @@ pub(super) fn stop_outcome(reason: &str) -> InvocationOutcome {
     match reason {
         "end_turn" | "stop_sequence" | "tool_use" | "pause_turn" => InvocationOutcome::Completed,
         _ => InvocationOutcome::Rejected,
+    }
+}
+
+/// Owned by an in-flight request and then by its returned stream. Creating this
+/// outside the stream body also measures abandonment before the first poll.
+pub(super) struct InvocationGuard {
+    pub record: BedrockInvocation,
+    pub attempts: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub last_request_id: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    started: Instant,
+    callback: Option<std::sync::Arc<dyn Fn(BedrockInvocation) + Send + Sync>>,
+    emitted: bool,
+}
+
+impl InvocationGuard {
+    pub fn new(
+        mut record: BedrockInvocation,
+        callback: Option<std::sync::Arc<dyn Fn(BedrockInvocation) + Send + Sync>>,
+        sdk_retry_count: Option<usize>,
+    ) -> Self {
+        record.sdk_retry_count = sdk_retry_count;
+        Self {
+            record,
+            attempts: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            last_request_id: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            started: Instant::now(),
+            callback,
+            emitted: false,
+        }
+    }
+
+    pub fn finish(&mut self, outcome: InvocationOutcome) {
+        if self.emitted {
+            return;
+        }
+        self.emitted = true;
+        self.record.request_id = self.record.request_id.clone().or_else(|| {
+            self.last_request_id
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone()
+        });
+        self.record.finish(
+            self.started,
+            self.attempts.load(std::sync::atomic::Ordering::Relaxed),
+            outcome,
+        );
+        if let Some(callback) = &self.callback {
+            callback(self.record.clone());
+        }
+    }
+}
+
+impl Drop for InvocationGuard {
+    fn drop(&mut self) {
+        if self.attempts.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            self.finish(InvocationOutcome::Cancelled);
+        }
     }
 }
 

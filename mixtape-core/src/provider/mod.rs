@@ -18,7 +18,9 @@ use std::error::Error;
 #[cfg(feature = "anthropic")]
 pub use anthropic::AnthropicProvider;
 #[cfg(feature = "bedrock")]
-pub use bedrock::{BedrockProvider, InferenceProfile};
+pub use bedrock::{
+    BedrockChatCompletionsProvider, BedrockProvider, BedrockResponsesProvider, InferenceProfile,
+};
 pub use retry::{RetryCallback, RetryConfig, RetryInfo};
 
 // Re-export ModelResponse from model module

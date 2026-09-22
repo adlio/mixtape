@@ -75,8 +75,15 @@ impl PendingBlock {
                 data: base64::engine::general_purpose::STANDARD.encode(bytes),
             }),
             Self::Tool { id, name, input } => {
-                let input: serde_json::Value = serde_json::from_str(&input)
-                    .map_err(|_| invalid("Tool input is not valid JSON"))?;
+                // Converse may finish a zero-argument tool block without any
+                // input bytes (or with one empty delta). ContentBlockStop is
+                // required before reaching here; a truncated block still fails.
+                let input: serde_json::Value = if input.is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::from_str(&input)
+                        .map_err(|_| invalid("Tool input is not valid JSON"))?
+                };
                 if !input.is_object() {
                     return Err(invalid("Tool input must be a JSON object"));
                 }
@@ -314,6 +321,44 @@ mod tests {
     }
 
     #[test]
+    fn zero_argument_tool_input_can_be_empty_when_the_block_finishes() {
+        for sends_empty_delta in [false, true] {
+            let mut state = StreamAssembler::default();
+            state.push(start_tool(0)).unwrap();
+            if sends_empty_delta {
+                state
+                    .push(delta(
+                        0,
+                        ContentBlockDelta::ToolUse(
+                            ToolUseBlockDelta::builder().input("").build().unwrap(),
+                        ),
+                    ))
+                    .unwrap();
+            }
+            state.push(stop_block(0)).unwrap();
+            state.push(stop_message()).unwrap();
+            let events = state.finish().unwrap();
+            assert!(events.iter().any(|event| matches!(event,
+                StreamEvent::ContentBlock(ContentBlock::ToolUse(tool)) if tool.input == serde_json::json!({})
+            )));
+        }
+        let mut malformed = StreamAssembler::default();
+        malformed.push(start_tool(0)).unwrap();
+        malformed
+            .push(delta(
+                0,
+                ContentBlockDelta::ToolUse(
+                    ToolUseBlockDelta::builder().input("{").build().unwrap(),
+                ),
+            ))
+            .unwrap();
+        assert!(
+            malformed.push(stop_block(0)).is_err(),
+            "nonempty malformed JSON must still fail closed"
+        );
+    }
+
+    #[test]
     fn signed_reasoning_and_content_order_survive_streaming() {
         let mut state = StreamAssembler::default();
         for part in ["reason ", "carefully"] {
@@ -398,7 +443,7 @@ mod tests {
 
     #[test]
     fn malformed_tool_arguments_are_never_replaced_with_empty_objects() {
-        for json in ["", "{broken", "null", "[]", "42"] {
+        for json in [" ", "{broken", "null", "[]", "42"] {
             let mut state = StreamAssembler::default();
             state.push(start_tool(0)).unwrap();
             state

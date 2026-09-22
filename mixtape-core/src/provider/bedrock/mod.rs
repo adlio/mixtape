@@ -1194,9 +1194,7 @@ impl ModelProvider for BedrockProvider {
         guard.record.request_id = output.request_id().map(str::to_owned);
         let mut stream = output.stream;
         let events = async_stream::try_stream! {
-            while let Some(event) = stream.recv().await.map_err(|_| {
-                ProviderError::Model("Bedrock response stream failed".into())
-            })? {
+            while let Some(event) = stream.recv().await.map_err(classify_aws_error)? {
                 yield event;
             }
         };
@@ -1395,6 +1393,34 @@ mod tests {
     // - https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html
     // - https://docs.rs/aws-sdk-bedrockruntime/latest/aws_sdk_bedrockruntime/operation/converse/enum.ConverseError.html
     // - https://docs.aws.amazon.com/bedrock/latest/userguide/troubleshooting-api-error-codes.html
+
+    #[test]
+    fn stream_sdk_errors_keep_service_categories() {
+        let unavailable: SdkError<std::io::Error, ()> = SdkError::service_error(
+            std::io::Error::other("ServiceUnavailableException: synthetic outage"),
+            (),
+        );
+        assert!(matches!(
+            classify_aws_error(unavailable),
+            ProviderError::ServiceUnavailable(_)
+        ));
+        let denied: SdkError<std::io::Error, ()> = SdkError::service_error(
+            std::io::Error::other("AccessDeniedException: synthetic permission failure"),
+            (),
+        );
+        assert!(matches!(
+            classify_aws_error(denied),
+            ProviderError::Authentication(_)
+        ));
+        let invalid: SdkError<std::io::Error, ()> = SdkError::service_error(
+            std::io::Error::other("ValidationException: synthetic schema failure"),
+            (),
+        );
+        assert!(matches!(
+            classify_aws_error(invalid),
+            ProviderError::Configuration(_)
+        ));
+    }
 
     #[test]
     fn test_classify_throttling_exception() {

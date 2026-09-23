@@ -104,6 +104,10 @@ impl Tool for AddNumbers {
 }
 
 async fn config() -> aws_config::SdkConfig {
+    config_in_region("us-west-2").await
+}
+
+async fn config_in_region(region: &str) -> aws_config::SdkConfig {
     assert_eq!(
         std::env::var("MIXTAPE_RUN_BEDROCK_SMOKE").as_deref(),
         Ok("1"),
@@ -113,7 +117,7 @@ async fn config() -> aws_config::SdkConfig {
         .expect("Expected account must be supplied explicitly");
     assert!(account.len() == 12 && account.bytes().all(|byte| byte.is_ascii_digit()));
     let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(Region::new("us-west-2"))
+        .region(Region::new(region.to_owned()))
         .retry_config(aws_config::retry::RetryConfig::standard().with_max_attempts(1))
         .load()
         .await;
@@ -457,6 +461,123 @@ mod contracts {
                 "type":"object", "properties":{"a":{"type":"integer"},"b":{"type":"integer"}},
                 "required":["a","b"], "additionalProperties":false
             }),
+        }
+    }
+
+    /// Run one explicitly selected mapped model, never an inferred alias or preview.
+    /// Each mode makes two requests: tool call, then serialized tool-result replay.
+    #[tokio::test]
+    #[ignore = "Requires synthetic inference approval and MIXTAPE_SMOKE_MODEL"]
+    async fn catalog_model_tool_replay() {
+        let id = std::env::var("MIXTAPE_SMOKE_MODEL")
+            .expect("Select one mapped model explicitly with MIXTAPE_SMOKE_MODEL");
+        let descriptor = mixtape_core::models::bedrock_model_descriptor(&id)
+            .filter(|model| model.model_id == id && !id.contains("fable"))
+            .expect("Use a mapped, non-preview base model ID");
+        let region = if id == "qwen.qwen3-coder-next" {
+            "us-east-1"
+        } else {
+            "us-west-2"
+        };
+        let config = config_in_region(region).await;
+        let target = if descriptor.requires_inference_profile {
+            format!("us.{id}")
+        } else {
+            id.clone()
+        };
+        for streaming in [false, true] {
+            let case = Case::new(if streaming {
+                "catalog_stream_tool_replay"
+            } else {
+                "catalog_tool_replay"
+            });
+            let model = descriptor.with_token_limits(128_000, LIMIT).unwrap();
+            let (first, following): (Box<dyn ModelProvider>, Box<dyn ModelProvider>) =
+                if id.starts_with("openai.") {
+                    let provider = BedrockResponsesProvider::from_sdk_config(&config, model)
+                        .unwrap()
+                        .with_inference_target(&target)
+                        .unwrap()
+                        .with_max_tokens(LIMIT as i32)
+                        .with_max_retries(1)
+                        .with_invocation_callback(case.observer());
+                    (
+                        Box::new(
+                            provider
+                                .clone()
+                                .with_tool_choice(BedrockToolChoice::Tool("add_numbers".into())),
+                        ),
+                        Box::new(provider),
+                    )
+                } else if id == KIMI {
+                    let provider = BedrockChatCompletionsProvider::from_sdk_config(&config, model)
+                        .unwrap()
+                        .with_inference_target(&target)
+                        .unwrap()
+                        .with_max_tokens(LIMIT as i32)
+                        .with_max_retries(1)
+                        .with_invocation_callback(case.observer());
+                    (
+                        Box::new(
+                            provider
+                                .clone()
+                                .with_tool_choice(BedrockToolChoice::Tool("add_numbers".into())),
+                        ),
+                        Box::new(provider),
+                    )
+                } else {
+                    let provider = BedrockProvider::with_client(Client::new(&config), model)
+                        .with_inference_target(&target)
+                        .unwrap()
+                        .with_max_tokens(LIMIT as i32)
+                        .with_max_retries(1)
+                        .with_invocation_callback(case.observer());
+                    let first = if id.starts_with("anthropic.") {
+                        provider
+                            .clone()
+                            .with_disabled_thinking()
+                            .with_tool_choice(BedrockToolChoice::Tool("add_numbers".into()))
+                    } else {
+                        // Named tool forcing is not universal. Do not pretend a
+                        // model choosing not to call a tool is a transport defect.
+                        provider.clone()
+                    };
+                    (Box::new(first), Box::new(provider))
+                };
+            let mut messages = vec![Message::user(
+                "Call add_numbers exactly once with a=17 and b=25. After its result, respond only with the JSON {\"sum\":42,\"status\":\"ok\"}. Do not use markdown.",
+            )];
+            let response = complete(&*first, streaming, messages.clone(), vec![tool()], None).await;
+            assert_eq!(
+                response.stop_reason,
+                StopReason::ToolUse,
+                "Model did not choose the requested tool"
+            );
+            let calls = response.message.tool_uses();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].name, "add_numbers");
+            assert_eq!(calls[0].input, json!({"a":17,"b":25}));
+            let call_id = calls[0].id.clone();
+            messages.push(response.message);
+            messages.push(Message::tool_results(vec![ToolResultBlock {
+                tool_use_id: call_id,
+                content: ToolResult::Json(json!({"sum":42})),
+                status: ToolResultStatus::Success,
+            }]));
+            let serialized = serde_json::to_vec(&messages).unwrap();
+            let replayed: Vec<Message> = serde_json::from_slice(&serialized).unwrap();
+            let response = complete(&*following, streaming, replayed, vec![tool()], None).await;
+            assert_answer(&response);
+            let records = case.records.lock().unwrap();
+            assert_eq!(records.len(), 2);
+            for record in &*records {
+                assert_eq!(record.requested_model, id);
+                assert_eq!(record.dispatched_target, target);
+                assert_eq!(record.region.as_deref(), Some(region));
+                assert_eq!(record.attempts, 1);
+                assert_eq!(record.outcome, InvocationOutcome::Completed);
+                assert!(record.request_id.as_ref().is_some_and(|id| !id.is_empty()));
+            }
         }
     }
 

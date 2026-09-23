@@ -799,7 +799,10 @@ impl BedrockProvider {
                 | "anthropic.claude-sonnet-4-6"
                 | "anthropic.claude-haiku-4-5-20251001-v1:0"
         );
-        if mode.is_some() && !adaptive && !manual {
+        // Opus 4.8 disabled thinking is live-verified separately; do not infer
+        // adaptive thinking, manual budgets or effort levels from that result.
+        let verified_disabled = model_id == "anthropic.claude-opus-4-8" && mode == Some("disabled");
+        if mode.is_some() && !adaptive && !manual && !verified_disabled {
             return Err(invalid("Thinking controls are not verified for this model"));
         }
         match mode {
@@ -1892,6 +1895,32 @@ mod tests {
             "disabled"
         );
         assert!(build_additional_model_fields(None, None, &HashMap::new()).is_none());
+    }
+
+    #[test]
+    fn opus48_accepts_verified_disabled_thinking_only() {
+        let provider = configured("us.anthropic.claude-opus-4-8");
+        let disabled = provider.clone().with_disabled_thinking();
+        assert!(disabled.validate_configuration().is_ok());
+        let fields = build_additional_model_fields(
+            None,
+            disabled.thinking_config,
+            &disabled.additional_fields,
+        )
+        .unwrap();
+        assert_eq!(
+            conversion::document_to_json(&fields)["thinking"]["type"],
+            "disabled"
+        );
+        assert!(provider
+            .clone()
+            .with_adaptive_thinking()
+            .validate_configuration()
+            .is_err());
+        assert!(provider
+            .with_thinking_effort("high")
+            .validate_configuration()
+            .is_err());
     }
 
     #[test]

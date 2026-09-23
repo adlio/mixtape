@@ -39,7 +39,7 @@ leverage foundational agentic tools.
 # In your Cargo.toml
 
 [dependencies]
-mixtape-core = { version = "0.3", features = ["bedrock"] }
+mixtape-core = { version = "=0.5.0", features = ["bedrock"] }
 ```
 
 | Feature     | Description            |
@@ -53,7 +53,7 @@ Add `mcp` for MCP server integration, `session` for conversation persistence.
 
 ## Workspace Crates
 
-This repository contains five crates:
+This repository contains six crates:
 
 | Crate                     | Purpose                                                |
 |---------------------------|--------------------------------------------------------|
@@ -62,6 +62,7 @@ This repository contains five crates:
 | **mixtape-cli**           | Session storage and interactive REPL features          |
 | **mixtape-server**        | HTTP server with AG-UI protocol support *(experimental)* |
 | **mixtape-anthropic-sdk** | Low-level Anthropic API client (used internally)       |
+| **mixtape-acp**           | Agent Client Protocol adapter for editor integration  |
 
 Most projects need only `mixtape-core`. Add `mixtape-tools` for ready-to-use tools.
 
@@ -159,8 +160,8 @@ Save conversations to SQLite (requires `session` feature and `mixtape-cli` crate
 
 ```toml
 [dependencies]
-mixtape = { version = "0.3", features = ["session"] }
-mixtape-cli = "0.3"
+mixtape-core = { version = "=0.5.0", features = ["bedrock", "session"] }
+mixtape-cli = "=0.5.0"
 ```
 
 ```rust

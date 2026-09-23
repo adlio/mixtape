@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-23
+
+### Added
+
+- Runtime Bedrock model definitions and exact inference-profile targets, alongside an expanded typed model catalog.
+- Explicit Bedrock Runtime Chat Completions and Responses providers, with signed requests, streaming, tool replay, and invocation metadata. Existing Converse callers do not switch APIs automatically.
+- Reasoning replay, adaptive-thinking controls, JSON output schemas, tool-choice controls, and prompt-cache checkpoints for supported model/API combinations.
+- Explicit 30-minute cache checkpoint requests for Kimi K3 Chat Completions and GPT-6 Astra Runtime Responses. Cache hits depend on the service; a requested TTL is not a measured retention guarantee.
+- `mixtape-acp`: an Agent Client Protocol adapter for editor integration.
+- SQLite tools with database- and table-specific read/write permissions.
+- Opt-in synthetic Bedrock compatibility tests, including bounded Kimi transport retries without relaxing output or replay assertions.
+
+### Changed
+
+- **BREAKING**: `Model::name` and `BedrockModel::bedrock_id` now return strings borrowed from `self`, not necessarily static strings. Update callers that store these values beyond the model's lifetime.
+- **BREAKING**: `ContentBlock`, `StreamEvent`, and `InvocationOutcome` have new variants. Update downstream exhaustive matches.
+- **BREAKING**: text message blocks serialize as `{"type":"text","text":"..."}`. Check stored conversation compatibility before upgrading; retain provider-specific reasoning/replay state rather than converting it to plain text.
+- All six workspace crates use version 0.5.0. Publishable internal dependencies are pinned to the same version, and the workspace lockfile is tracked for reproducible release checks.
+
+### Fixed
+
+- Preserve signed, redacted, and Responses reasoning through tool loops and persisted conversation replay.
+- Accept completed zero-argument tool streams while still rejecting unfinished or malformed tool input.
+- Preserve service/authentication/throttling error categories inside Bedrock streams and report cancellation separately from completion.
+- Handle Kimi Responses reasoning events and Opus 4.8's verified disabled-thinking option.
+- Release publishing now checks exact registry versions, stops on lookup or upload failures, includes `mixtape-acp`, and announces the GitHub Release only after every crate is published.
+
+### Verification limits
+
+- Astra Runtime explicit caching passed live streaming and non-streaming tool replay, with cache writes and subsequent hits observed.
+- Kimi remains available, but this release-preparation run could not complete its live Chat cache/replay test: both cached attempts and the existing uncached baseline timed out without a response. Offline cache and retry regressions pass; this is not a clean live compatibility result.
+- Catalog declarations do not establish account access, regional availability, data eligibility, or support for every API/control combination. No final application default model is selected by this release.
+
 ## [0.3.1] - 2026-02-20
 
 ### Added
@@ -90,7 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - AWS SigV4 authenticated requests
 - **mixtape-cli**: Session storage and REPL utilities for interactive agents
 
-[Unreleased]: https://github.com/adlio/mixtape/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/adlio/mixtape/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/adlio/mixtape/compare/v0.4.0...v0.5.0
 [0.3.1]: https://github.com/adlio/mixtape/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/adlio/mixtape/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/adlio/mixtape/compare/v0.2.0...v0.2.1

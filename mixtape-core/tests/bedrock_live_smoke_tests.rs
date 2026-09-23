@@ -1,8 +1,10 @@
 //! Opt-in live tests. The normal suite skips every networked case.
 //!
 //! Run only after authorizing live inference. Basic tool-loop cases make at most
-//! two requests with 1,024 output tokens each. Extended contracts use fixed call
-//! counts and a 4,096-token ceiling; all calls have timeouts and retries disabled.
+//! two logical calls with 1,024 output tokens each. Extended contracts use fixed
+//! call counts and a 4,096-token ceiling. Kimi permits at most three initial HTTP
+//! attempts per call; other models get one. Every retry is reported, calls have
+//! timeouts, and streams are never reconnected. No correctness assertion is relaxed.
 //! Set MIXTAPE_RUN_BEDROCK_SMOKE=1 and MIXTAPE_SMOKE_ACCOUNT to the expected
 //! 12-digit account. Credentials must come from the normal SDK provider; never
 //! place credentials in these variables.
@@ -27,6 +29,42 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::time::Duration;
+
+const KIMI_MODEL: &str = "moonshotai.kimi-k3";
+const RETIRED_SONNET_MODEL: &str = "anthropic.claude-sonnet-4-20250514-v1:0";
+
+// Compatibility is not an availability benchmark. Permit three initial HTTP
+// attempts for Kimi overloads, recording every retry; never reconnect a stream
+// or relax tool arguments, output, replay, identity, or stop-reason assertions.
+fn smoke_retry_config(model: &str) -> mixtape_core::RetryConfig {
+    mixtape_core::RetryConfig {
+        max_attempts: if model == KIMI_MODEL { 3 } else { 1 },
+        base_delay_ms: 2000,
+        max_delay_ms: 8000,
+    }
+}
+
+fn report_smoke_retry(info: mixtape_core::RetryInfo) {
+    println!(
+        "{}",
+        json!({"retry_attempt": info.attempt, "max_attempts": info.max_attempts,
+        "delay_ms": info.delay.as_millis(), "error": info.error})
+    );
+}
+
+#[test]
+fn smoke_retries_are_bounded_and_model_specific() {
+    assert_eq!(smoke_retry_config(KIMI_MODEL).max_attempts, 3);
+    for model in ["anthropic.claude-opus-5", "openai.gpt-6-astra", "unknown"] {
+        assert_eq!(smoke_retry_config(model).max_attempts, 1);
+    }
+    assert!(!mixtape_core::provider::retry::is_retryable_error(
+        &ProviderError::Model("malformed tool output".into())
+    ));
+    assert!(!mixtape_core::provider::retry::is_retryable_error(
+        &ProviderError::Authentication("denied".into())
+    ));
+}
 
 struct BoundedProvider {
     first: Option<Arc<dyn ModelProvider>>,
@@ -187,7 +225,8 @@ async fn run(api: &str) {
             .unwrap()
             .with_reasoning_effort("low")
             .with_max_tokens(1024)
-            .with_max_retries(1)
+            .with_retry_config(smoke_retry_config(KIMI_MODEL))
+            .with_retry_callback(report_smoke_retry)
             .with_invocation_callback(observe);
             (
                 Arc::new(provider.clone().with_tool_choice(force)),
@@ -230,7 +269,13 @@ async fn run(api: &str) {
     // Metadata only, also when a call fails or times out. Never print reasoning.
     let records = records.lock().unwrap();
     println!("{}", serde_json::to_string(&*records).unwrap());
-    assert!(records.len() <= 2 && records.iter().all(|record| record.attempts == 1));
+    assert!(
+        records.len() <= 2
+            && records.iter().all(|record| {
+                (1..=smoke_retry_config(&record.requested_model).max_attempts)
+                    .contains(&record.attempts)
+            })
+    );
     let result = result
         .expect("Synthetic smoke test exceeded its timeout")
         .expect("Mixtape tool loop failed");
@@ -293,7 +338,7 @@ fn smoke_request_budget_cannot_exceed_two_calls() {
 }
 
 // Extended contracts run only with the same explicit account/role opt-in. Each
-// case makes a fixed number of calls, uses synthetic inputs, and disables retries.
+// case has fixed logical-call limits and bounded, reported Kimi transport retries.
 mod contracts {
     use super::*;
     use futures::StreamExt;
@@ -350,7 +395,8 @@ mod contracts {
                 .with_inference_target(Self::target(KIMI))
                 .unwrap()
                 .with_max_tokens(LIMIT as i32)
-                .with_max_retries(1)
+                .with_retry_config(smoke_retry_config(KIMI))
+                .with_retry_callback(report_smoke_retry)
                 .with_invocation_callback(self.observer())
         }
 
@@ -364,7 +410,8 @@ mod contracts {
                 .with_inference_target(Self::target(model))
                 .unwrap()
                 .with_max_tokens(LIMIT as i32)
-                .with_max_retries(1)
+                .with_retry_config(smoke_retry_config(model))
+                .with_retry_callback(report_smoke_retry)
                 .with_invocation_callback(self.observer())
         }
 
@@ -376,7 +423,7 @@ mod contracts {
                 assert_eq!(record.dispatched_target, Self::target(model));
                 assert_eq!(record.endpoint, "bedrock-runtime");
                 assert_eq!(record.region.as_deref(), Some("us-west-2"));
-                assert_eq!(record.attempts, 1);
+                assert!((1..=smoke_retry_config(model).max_attempts).contains(&record.attempts));
                 assert_eq!(record.outcome, outcome);
                 assert!(record.request_id.as_ref().is_some_and(|id| !id.is_empty()));
                 if model == OPUS {
@@ -472,8 +519,12 @@ mod contracts {
         let id = std::env::var("MIXTAPE_SMOKE_MODEL")
             .expect("Select one mapped model explicitly with MIXTAPE_SMOKE_MODEL");
         let descriptor = mixtape_core::models::bedrock_model_descriptor(&id)
-            .filter(|model| model.model_id == id && !id.contains("fable"))
-            .expect("Use a mapped, non-preview base model ID");
+            .filter(|model| {
+                model.model_id == id && !id.contains("fable") && id != RETIRED_SONNET_MODEL
+            })
+            .expect(
+                "Use a mapped, non-preview model; legacy Sonnet 4 is retired from this test matrix",
+            );
         let region = if id == "qwen.qwen3-coder-next" {
             "us-east-1"
         } else {
@@ -515,7 +566,9 @@ mod contracts {
                         .with_inference_target(&target)
                         .unwrap()
                         .with_max_tokens(LIMIT as i32)
-                        .with_max_retries(1)
+                        .with_reasoning_effort("low")
+                        .with_retry_config(smoke_retry_config(KIMI))
+                        .with_retry_callback(report_smoke_retry)
                         .with_invocation_callback(case.observer());
                     (
                         Box::new(
@@ -574,7 +627,7 @@ mod contracts {
                 assert_eq!(record.requested_model, id);
                 assert_eq!(record.dispatched_target, target);
                 assert_eq!(record.region.as_deref(), Some(region));
-                assert_eq!(record.attempts, 1);
+                assert!((1..=smoke_retry_config(&id).max_attempts).contains(&record.attempts));
                 assert_eq!(record.outcome, InvocationOutcome::Completed);
                 assert!(record.request_id.as_ref().is_some_and(|id| !id.is_empty()));
             }
@@ -989,6 +1042,119 @@ mod contracts {
             "{}",
             json!({"case":case.name,"observed_cache_hit":records.iter().any(|record| record.usage.as_ref().unwrap().cache_read_input_tokens.unwrap_or(0)>0)})
         );
+    }
+
+    /// Exercise explicit checkpoints through the real provider and a serialized
+    /// tool round trip. Changed suffixes and both stream modes share one prefix.
+    async fn explicit_cache_tool_replay(chat: bool) {
+        use mixtape_core::provider::bedrock::{
+            BedrockChatCache, BedrockResponsesCache, BedrockResponsesCacheMode,
+        };
+        let config = config().await;
+        let model = if chat { KIMI } else { ASTRA };
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let system = format!("Synthetic cache fixture {nonce}. Follow the tool task; return only JSON with sum and status=ok.\n{}", prefix());
+        let key = format!("mixtape-synthetic-{nonce}");
+        for streaming in [false, true] {
+            let case = Case::new(if chat {
+                "kimi_chat_explicit_cache_replay"
+            } else {
+                "astra_runtime_explicit_cache_replay"
+            });
+            let force = BedrockToolChoice::Tool("add_numbers".into());
+            let (first, following): (Box<dyn ModelProvider>, Box<dyn ModelProvider>) = if chat {
+                let provider = case
+                    .chat(&config)
+                    .with_reasoning_effort("low")
+                    .with_prompt_cache(BedrockChatCache {
+                        system: true,
+                        key: Some(key.clone()),
+                        ..Default::default()
+                    });
+                (
+                    Box::new(provider.clone().with_tool_choice(force)),
+                    Box::new(provider),
+                )
+            } else {
+                let provider = case
+                    .responses(&config, ASTRA)
+                    .with_reasoning_effort("low")
+                    .with_prompt_cache(BedrockResponsesCache {
+                        mode: BedrockResponsesCacheMode::Explicit,
+                        system: true,
+                        key: Some(key.clone()),
+                        ..Default::default()
+                    });
+                (
+                    Box::new(provider.clone().with_tool_choice(force)),
+                    Box::new(provider),
+                )
+            };
+            let mut messages = vec![Message::user(format!(
+                "Call add_numbers once with a=17 and b=25. Then return only the JSON {{\"sum\":42,\"status\":\"ok\"}}. Synthetic stream variant: {streaming}."
+            ))];
+            let answer = complete(
+                &*first,
+                streaming,
+                messages.clone(),
+                vec![tool()],
+                Some(system.clone()),
+            )
+            .await;
+            assert_eq!(answer.stop_reason, StopReason::ToolUse);
+            let calls = answer.message.tool_uses();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].name, "add_numbers");
+            assert_eq!(calls[0].input, json!({"a":17,"b":25}));
+            let tool_use_id = calls[0].id.clone();
+            messages.push(answer.message);
+            messages.push(Message::tool_results(vec![ToolResultBlock {
+                tool_use_id,
+                content: ToolResult::Json(json!({"sum":42})),
+                status: ToolResultStatus::Success,
+            }]));
+            let replayed: Vec<Message> =
+                serde_json::from_slice(&serde_json::to_vec(&messages).unwrap()).unwrap();
+            let answer = complete(
+                &*following,
+                streaming,
+                replayed,
+                vec![tool()],
+                Some(system.clone()),
+            )
+            .await;
+            assert_answer(&answer);
+            case.verify(2, model, InvocationOutcome::Completed);
+            let records = case.records.lock().unwrap();
+            for record in records.iter() {
+                let usage = record.usage.as_ref().unwrap();
+                assert!(usage.cache_read_input_tokens.is_some());
+                assert!(usage.cache_write_input_tokens.is_some());
+            }
+            // Cache placement/usage capture is required; hits depend on service
+            // routing and are reported independently, not manufactured as passes.
+            println!(
+                "{}",
+                json!({"case":case.name, "streaming":streaming,
+                "observed_cache_hit": records.iter().any(|r| r.usage.as_ref().unwrap().cache_read_input_tokens.unwrap_or(0) > 0),
+                "observed_cache_write": records.iter().any(|r| r.usage.as_ref().unwrap().cache_write_input_tokens.unwrap_or(0) > 0)})
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "Live Kimi Chat cache and tool replay; four logical calls, at most twelve initial HTTP attempts"]
+    async fn kimi_chat_explicit_cache_tool_replay() {
+        explicit_cache_tool_replay(true).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "Live Astra Runtime cache and tool replay; four requests"]
+    async fn astra_runtime_explicit_cache_tool_replay() {
+        explicit_cache_tool_replay(false).await;
     }
 
     #[tokio::test]

@@ -16,12 +16,16 @@ use std::collections::HashSet;
 pub(super) fn messages(
     input: &[Message],
     system: Option<&str>,
+    cache: Option<&super::BedrockChatCache>,
 ) -> Result<Vec<Value>, ProviderError> {
+    if let Some(cache) = cache {
+        cache.validate_request(input, system)?;
+    }
     let mut result = Vec::new();
     if let Some(system) = system {
-        result.push(json!({"role": "system", "content": system}));
+        result.push(json!({"role": "system", "content": super::cache::content(system, cache.is_some_and(|cache| cache.system))}));
     }
-    for message in input {
+    for (index, message) in input.iter().enumerate() {
         if message.content.is_empty() {
             return Err(invalid(
                 "Chat messages must contain at least one content block",
@@ -113,7 +117,8 @@ pub(super) fn messages(
                     }
                 }
                 if let Some(text) = text {
-                    result.push(json!({"role": "user", "content": text}));
+                    let checkpoint = cache.is_some_and(|cache| cache.messages.contains(&index));
+                    result.push(json!({"role": "user", "content": super::cache::content(&text, checkpoint)}));
                 }
             }
         }

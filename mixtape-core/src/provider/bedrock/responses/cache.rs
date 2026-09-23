@@ -1,4 +1,7 @@
-//! GPT-5.6 and Kimi K3 Runtime Responses cache controls, reviewed 2026-09-22.
+//! GPT-5.6, Kimi K3, and GPT-6 Astra Runtime Responses cache controls.
+//! Astra Runtime breakpoints and 30m TTL were live-verified on 2026-09-23;
+//! its model card documents caching under Mantle but is silent about Runtime.
+//! No endpoint fallback is performed and TTL retention has not been measured.
 //! <https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html>
 //! <https://aws.amazon.com/blogs/machine-learning/introducing-kimi-k3-on-amazon-bedrock/>
 
@@ -16,8 +19,8 @@ pub enum BedrockResponsesCacheMode {
     #[default]
     Implicit,
     /// Request explicit checkpoint selection. An empty set requests no caching
-    /// on GPT-5.6; Kimi requires at least one checkpoint because an empty set did
-    /// not reliably suppress cache reads in live verification.
+    /// on GPT-5.6. Kimi and Astra require a checkpoint: Kimi's empty set still
+    /// read warmed cache, and Astra's empty-set semantics remain unverified.
     Explicit,
 }
 
@@ -39,21 +42,22 @@ impl BedrockResponsesCache {
             "openai.gpt-5.6-sol"
                 | "openai.gpt-5.6-terra"
                 | "openai.gpt-5.6-luna"
+                | "openai.gpt-6-astra"
                 | "moonshotai.kimi-k3"
         ) {
             return Err(invalid(
                 "Explicit cache request syntax is not verified for this model on Runtime Responses",
             ));
         }
-        // Repeated live tests observed cache reads with Kimi's explicit mode
-        // and no checkpoints. Do not expose that combination as cache-disabled.
-        if model == "moonshotai.kimi-k3"
+        // Kimi's warmed cache still read with an empty explicit set. Astra's
+        // empty-set behavior has not been verified. Neither may claim cache-off.
+        if matches!(model, "moonshotai.kimi-k3" | "openai.gpt-6-astra")
             && matches!(self.mode, BedrockResponsesCacheMode::Explicit)
             && !self.system
             && self.messages.is_empty()
         {
             return Err(invalid(
-                "Kimi explicit caching requires a checkpoint; an empty set does not reliably disable caching",
+                "This model requires an explicit cache checkpoint; an empty set is not verified to disable caching",
             ));
         }
         if self.messages.len() + usize::from(self.system) > 4 {

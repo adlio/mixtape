@@ -12,7 +12,7 @@ mod telemetry;
 
 pub use responses::{BedrockResponsesCache, BedrockResponsesCacheMode, BedrockResponsesProvider};
 
-pub use chat_completions::BedrockChatCompletionsProvider;
+pub use chat_completions::{BedrockChatCache, BedrockChatCompletionsProvider};
 pub use controls::{BedrockCacheTtl, BedrockJsonSchema, BedrockPromptCache, BedrockToolChoice};
 pub use telemetry::{BedrockInvocation, InvocationOutcome, InvocationUsage};
 

@@ -607,7 +607,9 @@ fn response_cache_uses_original_message_indexes() {
 
 #[test]
 fn response_cache_rejects_unknown_contracts_and_invalid_positions() {
-    let (provider, _, _) = provider(vec![]);
+    let (mut provider, _, _) = provider(vec![]);
+    provider.base_model_id = "unverified.model".into();
+    provider.target = "unverified.model".into();
     assert!(provider
         .clone()
         .with_prompt_cache(BedrockResponsesCache::default())
@@ -799,4 +801,52 @@ fn kimi_empty_explicit_cache_cannot_claim_to_disable_caching() {
         ..Default::default()
     });
     assert!(provider.validate_configuration().is_err());
+}
+
+#[test]
+fn astra_runtime_explicit_cache_preserves_routing_and_marks_only_selected_text() {
+    let (provider, _, _) = provider(vec![]);
+    let provider = provider.with_prompt_cache(BedrockResponsesCache {
+        mode: BedrockResponsesCacheMode::Explicit,
+        system: true,
+        messages: [0].into(),
+        ..Default::default()
+    });
+    for streaming in [false, true] {
+        let bytes = provider
+            .request(
+                &[Message::user("stable evidence")],
+                &[],
+                Some("instructions"),
+                streaming,
+            )
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["model"], "us.openai.gpt-6-astra");
+        assert_eq!(body["store"], false);
+        assert_eq!(
+            body["prompt_cache_options"],
+            json!({"mode":"explicit", "ttl":"30m"})
+        );
+        assert_eq!(
+            body["input"][0]["content"][0]["prompt_cache_breakpoint"],
+            json!({"mode":"explicit"})
+        );
+        assert_eq!(
+            body["input"][1]["content"][0]["prompt_cache_breakpoint"],
+            json!({"mode":"explicit"})
+        );
+    }
+}
+
+#[test]
+fn astra_empty_explicit_cache_does_not_claim_cache_off() {
+    let (provider, _, _) = provider(vec![]);
+    assert!(provider
+        .with_prompt_cache(BedrockResponsesCache {
+            mode: BedrockResponsesCacheMode::Explicit,
+            ..Default::default()
+        })
+        .validate_configuration()
+        .is_err());
 }

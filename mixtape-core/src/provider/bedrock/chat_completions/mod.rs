@@ -8,7 +8,9 @@
 //! - <https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions.html>
 //! - <https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-moonshot-ai-kimi-k3.html>
 
+mod cache;
 mod conversion;
+pub use cache::BedrockChatCache;
 mod streaming;
 #[cfg(test)]
 mod tests;
@@ -57,6 +59,7 @@ pub struct BedrockChatCompletionsProvider {
     reasoning_effort: Option<String>,
     tool_choice: Option<BedrockToolChoice>,
     output_schema: Option<BedrockJsonSchema>,
+    prompt_cache: Option<BedrockChatCache>,
     retry_config: RetryConfig,
     on_retry: Option<RetryCallback>,
     on_invocation: Option<InvocationCallback>,
@@ -110,6 +113,7 @@ impl BedrockChatCompletionsProvider {
             reasoning_effort: None,
             tool_choice: None,
             output_schema: None,
+            prompt_cache: None,
             retry_config: RetryConfig::default(),
             on_retry: None,
             on_invocation: None,
@@ -184,6 +188,12 @@ impl BedrockChatCompletionsProvider {
     /// Application validation of the result is still required.
     pub fn with_output_schema(mut self, schema: BedrockJsonSchema) -> Self {
         self.output_schema = Some(schema);
+        self
+    }
+
+    /// Request explicit Kimi text checkpoints. Omit for provider-default caching.
+    pub fn with_prompt_cache(mut self, cache: BedrockChatCache) -> Self {
+        self.prompt_cache = Some(cache);
         self
     }
 
@@ -278,6 +288,9 @@ impl BedrockChatCompletionsProvider {
                 super::openai_controls::validate_schema(schema)?;
             }
         }
+        if let Some(cache) = &self.prompt_cache {
+            cache.validate(base)?;
+        }
         Ok(())
     }
 
@@ -299,7 +312,7 @@ impl BedrockChatCompletionsProvider {
         }
         let mut body = json!({
             "model": self.target,
-            "messages": conversion::messages(messages, system)?,
+            "messages": conversion::messages(messages, system, self.prompt_cache.as_ref())?,
             "max_tokens": self.max_tokens,
             "stream": streaming,
         });
@@ -326,6 +339,9 @@ impl BedrockChatCompletionsProvider {
         }
         if let Some(effort) = &self.reasoning_effort {
             body["reasoning_effort"] = json!(effort);
+        }
+        if let Some(cache) = &self.prompt_cache {
+            cache.apply_options(&mut body);
         }
         if streaming {
             body["stream_options"] = json!({"include_usage": true});

@@ -435,7 +435,7 @@ fn tool_errors_keep_their_status_and_binary_results_are_rejected() {
         content: ToolResult::text("missing"),
         status: ToolResultStatus::Error,
     }]);
-    let messages = conversion::messages(&[result], None).unwrap();
+    let messages = conversion::messages(&[result], None, None).unwrap();
     let content: Value = serde_json::from_str(messages[0]["content"].as_str().unwrap()).unwrap();
     assert_eq!(content["is_error"], true);
     let binary = Message::tool_results(vec![ToolResultBlock {
@@ -443,7 +443,7 @@ fn tool_errors_keep_their_status_and_binary_results_are_rejected() {
         content: ToolResult::image(crate::ImageFormat::Png, vec![1, 2, 3]),
         status: ToolResultStatus::Success,
     }]);
-    assert!(conversion::messages(&[binary], None).is_err());
+    assert!(conversion::messages(&[binary], None, None).is_err());
 }
 
 #[tokio::test]
@@ -605,4 +605,201 @@ fn known_claude_and_astra_chat_tool_combinations_are_rejected() {
     assert!(provider
         .request(&[Message::user("x")], &[], None, true)
         .is_ok());
+}
+
+#[test]
+fn chat_cache_preserves_original_indexes_across_expanded_tool_results() {
+    let (provider, _, _) = provider(vec![]);
+    let provider = provider.with_prompt_cache(BedrockChatCache {
+        key: Some("synthetic-prefix-v1".into()),
+        system: true,
+        messages: [0].into(),
+    });
+    let mut mixed = Message::tool_results(vec![ToolResultBlock {
+        tool_use_id: "call-1".into(),
+        content: ToolResult::Text("tool data".into()),
+        status: ToolResultStatus::Success,
+    }]);
+    mixed
+        .content
+        .insert(0, ContentBlock::Text("before tool".into()));
+    mixed.content.extend([
+        ContentBlock::Text("after ".into()),
+        ContentBlock::Text("tool".into()),
+    ]);
+    let messages = [
+        mixed,
+        Message::assistant("acknowledged"),
+        Message::user("uncached suffix"),
+    ];
+    for streaming in [false, true] {
+        let bytes = provider
+            .request(&messages, &[], Some("system prefix"), streaming)
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["model"], "us.moonshotai.kimi-k3");
+        assert_eq!(
+            body["prompt_cache_options"],
+            json!({"mode":"explicit", "ttl":"30m"})
+        );
+        assert_eq!(body["prompt_cache_key"], "synthetic-prefix-v1");
+        let wire = body["messages"].as_array().unwrap();
+        assert_eq!(wire.len(), 6);
+        for (index, text) in [(0, "system prefix"), (3, "after tool")] {
+            assert_eq!(
+                wire[index]["content"],
+                json!([{"type":"text", "text":text,
+                "prompt_cache_breakpoint":{"mode":"explicit"}}])
+            );
+        }
+        assert_eq!(wire[1]["content"], "before tool");
+        assert_eq!(wire[2]["role"], "tool");
+        assert_eq!(wire[2]["content"], "tool data");
+        assert_eq!(wire[4]["content"], "acknowledged");
+        assert_eq!(wire[5]["content"], "uncached suffix");
+    }
+}
+
+#[test]
+fn chat_cache_rejects_empty_excessive_and_invalid_key_configs() {
+    let (provider, _, _) = provider(vec![]);
+    for cache in [
+        BedrockChatCache::default(),
+        BedrockChatCache {
+            system: true,
+            messages: [0, 1, 2, 3].into(),
+            key: None,
+        },
+        BedrockChatCache {
+            system: true,
+            key: Some(String::new()),
+            ..Default::default()
+        },
+        BedrockChatCache {
+            system: true,
+            key: Some("x".repeat(65)),
+            ..Default::default()
+        },
+        BedrockChatCache {
+            system: true,
+            key: Some("bad\nkey".into()),
+            ..Default::default()
+        },
+    ] {
+        assert!(provider
+            .clone()
+            .with_prompt_cache(cache)
+            .validate_configuration()
+            .is_err());
+    }
+}
+
+#[test]
+fn chat_cache_rejects_missing_system_and_non_user_text_positions() {
+    let (provider, _, _) = provider(vec![]);
+    assert!(provider
+        .clone()
+        .with_prompt_cache(BedrockChatCache {
+            system: true,
+            ..Default::default()
+        })
+        .request(&[Message::user("x")], &[], None, false)
+        .is_err());
+    for messages in [
+        vec![Message::assistant("not a user message")],
+        vec![Message::tool_results(vec![ToolResultBlock {
+            tool_use_id: "call-1".into(),
+            content: ToolResult::Text("x".into()),
+            status: ToolResultStatus::Success,
+        }])],
+        vec![],
+    ] {
+        assert!(provider
+            .clone()
+            .with_prompt_cache(BedrockChatCache {
+                messages: [0].into(),
+                ..Default::default()
+            })
+            .request(&messages, &[], None, false)
+            .is_err());
+    }
+    assert!(provider
+        .clone()
+        .with_prompt_cache(BedrockChatCache {
+            messages: [usize::MAX].into(),
+            ..Default::default()
+        })
+        .request(&[Message::user("x")], &[], None, false)
+        .is_err());
+    let mut other = provider;
+    other.base_model_id = "openai.gpt-6-astra".into();
+    other.target = "us.openai.gpt-6-astra".into();
+    assert!(other
+        .with_prompt_cache(BedrockChatCache {
+            system: true,
+            ..Default::default()
+        })
+        .validate_configuration()
+        .is_err());
+}
+
+#[tokio::test]
+async fn overload_retries_keep_cached_payload_and_stream_failures_do_not_reconnect() {
+    for status in [429, 500, 502, 503] {
+        for streaming in [false, true] {
+            let success = if streaming {
+                final_stream()
+            } else {
+                json_http(final_response())
+            };
+            let (provider, client, records) = provider(vec![
+                http(status, "application/json", b"private error".to_vec()),
+                success,
+            ]);
+            let provider = provider.with_prompt_cache(BedrockChatCache {
+                system: true,
+                ..Default::default()
+            });
+            if streaming {
+                let events = provider
+                    .generate_stream(vec![Message::user("x")], vec![], Some("prefix".into()))
+                    .await
+                    .unwrap()
+                    .collect::<Vec<_>>()
+                    .await;
+                assert!(events.iter().all(Result::is_ok));
+            } else {
+                provider
+                    .generate(vec![Message::user("x")], vec![], Some("prefix".into()))
+                    .await
+                    .unwrap();
+            }
+            let requests = client.requests.lock().unwrap();
+            assert_eq!(requests.len(), 2);
+            assert_eq!(requests[0], requests[1]);
+            assert_eq!(records.lock().unwrap()[0].attempts, 2);
+        }
+    }
+    let (provider, client, records) = provider(vec![sse(
+        vec![
+            chunk(json!({"content":"partial answer"}), Value::Null),
+            json!({"error":{"type":"server_error", "message":"private service error"}}),
+        ],
+        false,
+    )]);
+    let events = provider
+        .generate_stream(vec![Message::user("x")], vec![], None)
+        .await
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await;
+    assert!(events.iter().any(Result::is_err));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, Ok(StreamEvent::Stop { .. }))));
+    assert_eq!(client.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        records.lock().unwrap()[0].outcome,
+        InvocationOutcome::Failed
+    );
 }

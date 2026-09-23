@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help test coverage coverage-html coverage-ci build build-release clean fmt fmt-check clippy clippy-fix lint check doc doc-check all ci ensure-tools
+.PHONY: help test coverage coverage-html coverage-ci build build-release clean fmt fmt-check clippy clippy-fix lint check doc doc-check release-check all ci ensure-tools
 
 # Tool installation helpers
 CARGO_NEXTEST := $(shell command -v cargo-nextest 2>/dev/null)
@@ -69,6 +69,9 @@ doc: ## Generate docs
 doc-check: ## Check docs build without warnings
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
+release-check: ## Test publication guards without network access
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py'
+
 all: ensure-tools fmt clippy build test ## Format, lint, build, and test
 
-ci: ensure-tools fmt-check clippy build doc-check test ## Check formatting, lint, build, docs, test (for CI/hooks)
+ci: ensure-tools fmt-check clippy build doc-check test release-check ## Check formatting, lint, build, docs, test (for CI/hooks)

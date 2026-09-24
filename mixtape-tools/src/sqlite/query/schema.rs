@@ -75,7 +75,7 @@ impl Tool for SchemaQueryTool {
 
         let response = serde_json::json!({
             "status": "success",
-            "message": format!("Schema query executed successfully")
+            "message": "Schema query executed successfully"
         });
         Ok(ToolResult::Json(response))
     }
@@ -97,8 +97,15 @@ mod tests {
             db_path: Some(db.key()),
         };
 
-        let result = tool.execute(input).await;
-        assert!(result.is_ok());
+        let result = tool.execute(input).await.unwrap();
+        let json = crate::sqlite::test_utils::unwrap_json(result);
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "status": "success",
+                "message": "Schema query executed successfully"
+            })
+        );
 
         // Verify table was created
         let rows =

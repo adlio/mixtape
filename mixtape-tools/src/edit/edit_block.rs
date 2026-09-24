@@ -177,7 +177,7 @@ impl Tool for EditBlockTool {
                     let new_content = format!(
                         "{}{}{}",
                         &content[..fuzzy_match.start],
-                        &input.new_string,
+                        input.new_string,
                         &content[fuzzy_match.end..]
                     );
 
@@ -417,6 +417,30 @@ mod tests {
 
         let result = tool.execute(input).await.unwrap();
         assert!(result.as_text().contains("fuzzy"));
+    }
+
+    #[tokio::test]
+    async fn test_edit_block_fuzzy_preserves_surrounding_text() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+        fs::write(&file_path, "Hello, World!\nThis is a test.").unwrap();
+
+        let tool = EditBlockTool::with_base_path(temp_dir.path().to_path_buf());
+        let input = EditBlockInput {
+            file_path: PathBuf::from("test.txt"),
+            old_string: "Worle".to_string(), // Same-length typo to exercise fuzzy replacement
+            new_string: "Rust".to_string(),
+            expected_replacements: 1,
+            enable_fuzzy: true,
+            fuzzy_threshold: 0.7,
+        };
+
+        let result = tool.execute(input).await.unwrap();
+        assert!(result.as_text().contains("fuzzy"));
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            "Hello, Rust!\nThis is a test."
+        );
     }
 
     #[tokio::test]

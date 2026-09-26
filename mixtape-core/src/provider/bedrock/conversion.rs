@@ -837,6 +837,36 @@ mod reasoning_roundtrip_tests {
     use super::*;
 
     #[test]
+    fn opus55_signature_only_thinking_survives_persisted_tool_replay() {
+        let message = Message::assistant_with_content(vec![
+            ContentBlock::Thinking {
+                thinking: String::new(),
+                signature: "synthetic-thinking-signature".into(),
+            },
+            ContentBlock::Thinking {
+                thinking: String::new(),
+                signature: "synthetic-progress-signature".into(),
+            },
+            ContentBlock::ToolUse(ToolUseBlock {
+                id: "tool-1".into(),
+                name: "lookup".into(),
+                input: serde_json::json!({}),
+            }),
+        ]);
+        let native = to_bedrock_message(&message).unwrap();
+        let received = from_bedrock_message(&native);
+        let encoded = serde_json::to_vec(&received).unwrap();
+        let restored: Message = serde_json::from_slice(&encoded).unwrap();
+        let replay = from_bedrock_message(&to_bedrock_message(&restored).unwrap());
+        assert_eq!(
+            serde_json::to_vec(&replay).unwrap(),
+            serde_json::to_vec(&message).unwrap()
+        );
+        assert!(replay.text().is_empty());
+        assert_eq!(replay.tool_uses().len(), 1);
+    }
+
+    #[test]
     fn redacted_reasoning_round_trips_without_becoming_text() {
         let block = ContentBlock::RedactedThinking {
             data: base64::engine::general_purpose::STANDARD.encode([0, 255, 128, 1]),

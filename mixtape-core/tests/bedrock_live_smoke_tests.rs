@@ -349,6 +349,7 @@ mod contracts {
     use mixtape_core::types::{ContentBlock, StopReason, ToolResultBlock, ToolResultStatus};
 
     const OPUS: &str = "anthropic.claude-opus-5";
+    const OPUS55: &str = "anthropic.claude-opus-5-5";
     const KIMI: &str = "moonshotai.kimi-k3";
     const ASTRA: &str = "openai.gpt-6-astra";
     const LIMIT: usize = 4096;
@@ -385,6 +386,16 @@ mod contracts {
                 .with_inference_target(Self::target(OPUS))
                 .unwrap()
                 .with_max_tokens(LIMIT as i32)
+                .with_max_retries(1)
+                .with_invocation_callback(self.observer())
+        }
+
+        fn opus55(&self, config: &aws_config::SdkConfig) -> BedrockProvider {
+            BedrockProvider::with_client(Client::new(config), Self::model(OPUS55))
+                .with_inference_target(Self::target(OPUS55))
+                .unwrap()
+                .with_max_tokens(LIMIT as i32)
+                .with_thinking_effort("medium")
                 .with_max_retries(1)
                 .with_invocation_callback(self.observer())
         }
@@ -426,7 +437,7 @@ mod contracts {
                 assert!((1..=smoke_retry_config(model).max_attempts).contains(&record.attempts));
                 assert_eq!(record.outcome, outcome);
                 assert!(record.request_id.as_ref().is_some_and(|id| !id.is_empty()));
-                if model == OPUS {
+                if model == OPUS || model == OPUS55 {
                     // Converse does not return provider-resolved model identity.
                     assert!(record.provider_reported_model.is_none());
                 } else {
@@ -585,7 +596,11 @@ mod contracts {
                         .with_max_tokens(LIMIT as i32)
                         .with_max_retries(1)
                         .with_invocation_callback(case.observer());
-                    let first = if id.starts_with("anthropic.") {
+                    let first = if id == "anthropic.claude-opus-5-5" {
+                        // Thinking is always on and forced tool choice is rejected.
+                        // Keep the same prompt and exact tool/replay assertions.
+                        provider.clone()
+                    } else if id.starts_with("anthropic.") {
                         provider
                             .clone()
                             .with_disabled_thinking()
@@ -657,6 +672,8 @@ mod contracts {
         let case = Case::new(match (api, streaming) {
             ("opus", false) => "opus_reasoning_replay",
             ("opus", true) => "opus_stream_reasoning_replay",
+            ("opus55", false) => "opus55_reasoning_replay",
+            ("opus55", true) => "opus55_stream_reasoning_replay",
             ("chat", false) => "kimi_chat_reasoning_replay",
             ("chat", true) => "kimi_chat_stream_reasoning_replay",
             ("kimi", false) => "kimi_responses_reasoning_replay",
@@ -674,6 +691,17 @@ mod contracts {
                 ),
                 OPUS,
             ),
+            // Medium effort may skip thinking on this small arithmetic task.
+            // Explicit adaptive/high exercises the signed-block replay contract;
+            // normal catalog replay separately covers the model-default path.
+            "opus55" => (
+                Box::new(
+                    case.opus55(&config)
+                        .with_adaptive_thinking()
+                        .with_thinking_effort("high"),
+                ),
+                OPUS55,
+            ),
             "chat" => (
                 Box::new(case.chat(&config).with_reasoning_effort("high")),
                 KIMI,
@@ -688,9 +716,15 @@ mod contracts {
             ),
             _ => unreachable!(),
         };
-        let mut messages = vec![Message::user(
+        // Adaptive models may solve the two-equation fixture without producing
+        // a thinking block, even at high effort. Use a larger system for the
+        // Opus 5.5 signed-replay contract; its unique solution is (17,25,13,9).
+        let prompt = if api == "opus55" {
+            "Solve for integers a,b,c,d: 3*a+2*b+5*c-d=157; 7*a-3*b+c+4*d=93; 2*a+9*b-4*c+3*d=234; 5*a+6*b+2*c-7*d=198. Call add_numbers exactly once with a and b from the solution. After the tool returns, reply only with JSON containing sum and status=ok. Do not include markdown."
+        } else {
             "Find integers a,b satisfying 3*a+2*b=101 and 5*a-2*b=35. Call add_numbers exactly once with those values. After the tool returns, reply only with JSON containing sum and status=ok. Do not include markdown."
-        )];
+        };
+        let mut messages = vec![Message::user(prompt)];
         let first = complete(&*provider, streaming, messages.clone(), vec![tool()], None).await;
         assert_eq!(first.stop_reason, StopReason::ToolUse);
         let tools = first.message.tool_uses();
@@ -703,9 +737,9 @@ mod contracts {
                 thinking,
                 signature,
             } => {
-                // Opus 5 returns signature-only reasoning (empty visible text).
-                // The signature is the replay authority and must not be dropped.
-                if model == OPUS {
+                // Opus 5 and 5.5 can return signature-only reasoning. The
+                // signature is the replay authority and must not be dropped.
+                if model == OPUS || model == OPUS55 {
                     !signature.is_empty()
                 } else {
                     !thinking.is_empty()
@@ -753,6 +787,59 @@ mod contracts {
     async fn opus_stream_reasoning_replay() {
         replay("opus", true).await;
     }
+    #[tokio::test]
+    #[ignore = "Live Opus 5.5 signed thinking/tool replay; two requests"]
+    async fn opus55_reasoning_replay() {
+        replay("opus55", false).await;
+    }
+    #[tokio::test]
+    #[ignore = "Live Opus 5.5 streamed signed thinking/tool replay; two requests"]
+    async fn opus55_stream_reasoning_replay() {
+        replay("opus55", true).await;
+    }
+    #[tokio::test]
+    #[ignore = "Live Opus 5.5 cache TTL and streaming contracts; four requests"]
+    async fn opus55_cache_checkpoints() {
+        let config = config().await;
+        for ttl in [BedrockCacheTtl::FiveMinutes, BedrockCacheTtl::OneHour] {
+            let case = Case::new("opus55_cache_checkpoints");
+            let provider = case.opus55(&config).with_prompt_cache(BedrockPromptCache {
+                system: Some(ttl),
+                ..Default::default()
+            });
+            let system = format!(
+                "Return only JSON with sum and status=ok. Synthetic cache fixture {ttl:?}:\n{}",
+                prefix()
+            );
+            for streaming in [false, true] {
+                let answer = complete(
+                    &provider,
+                    streaming,
+                    vec![Message::user(format!(
+                        "Add 17+25. Synthetic variant: {streaming}."
+                    ))],
+                    vec![],
+                    Some(system.clone()),
+                )
+                .await;
+                assert_answer(&answer);
+            }
+            case.verify(2, OPUS55, InvocationOutcome::Completed);
+            let records = case.records.lock().unwrap();
+            for record in records.iter() {
+                let usage = record.usage.as_ref().unwrap();
+                assert!(usage.cache_read_input_tokens.is_some());
+                assert!(usage.cache_write_input_tokens.is_some());
+            }
+            // Neither an accepted TTL nor a cache hit proves TTL-long retention.
+            println!(
+                "{}",
+                json!({"case":case.name,"ttl":ttl,
+                "observed_cache_hit":records.iter().any(|r| r.usage.as_ref().unwrap().cache_read_input_tokens.unwrap_or(0)>0)})
+            );
+        }
+    }
+
     #[tokio::test]
     #[ignore = "Live synthetic Bedrock contract; two requests"]
     async fn kimi_chat_reasoning_replay() {

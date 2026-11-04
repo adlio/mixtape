@@ -39,7 +39,7 @@ leverage foundational agentic tools.
 # In your Cargo.toml
 
 [dependencies]
-mixtape-core = { version = "=0.5.0", features = ["bedrock"] }
+mixtape-core = { version = "=0.6.0", features = ["bedrock"] }
 ```
 
 | Feature     | Description            |
@@ -160,8 +160,8 @@ Save conversations to SQLite (requires `session` feature and `mixtape-cli` crate
 
 ```toml
 [dependencies]
-mixtape-core = { version = "=0.5.0", features = ["bedrock", "session"] }
-mixtape-cli = "=0.5.0"
+mixtape-core = { version = "=0.6.0", features = ["bedrock", "session"] }
+mixtape-cli = "=0.6.0"
 ```
 
 ```rust

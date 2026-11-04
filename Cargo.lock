@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "mixtape-acp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
@@ -2338,7 +2338,7 @@ dependencies = [
 
 [[package]]
 name = "mixtape-anthropic-sdk"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2357,7 +2357,7 @@ dependencies = [
 
 [[package]]
 name = "mixtape-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "mixtape-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2414,7 +2414,7 @@ dependencies = [
 
 [[package]]
 name = "mixtape-server"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "axum",
  "axum-test",
@@ -2436,7 +2436,7 @@ dependencies = [
 
 [[package]]
 name = "mixtape-tools"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "aws-config",

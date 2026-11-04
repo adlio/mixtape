@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-04
+
 ### Added
 
 - Claude Opus 5.5 Bedrock catalog entry, adaptive thinking and all five effort levels, with five-minute and one-hour prompt-cache checkpoints on Converse.

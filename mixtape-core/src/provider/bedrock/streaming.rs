@@ -415,6 +415,63 @@ mod tests {
     }
 
     #[test]
+    fn opus55_signature_only_blocks_survive_streaming_and_replay_in_order() {
+        let mut state = StreamAssembler::default();
+        for (index, chunks) in [
+            (0, ["thinking-", "signature"]),
+            (1, ["progress-", "signature"]),
+        ] {
+            for chunk in chunks {
+                let events = state
+                    .push(delta(
+                        index,
+                        ContentBlockDelta::ReasoningContent(ReasoningContentBlockDelta::Signature(
+                            chunk.into(),
+                        )),
+                    ))
+                    .unwrap();
+                assert!(
+                    events.is_empty(),
+                    "Signatures must never become display deltas"
+                );
+            }
+            state.push(stop_block(index)).unwrap();
+        }
+        state.push(start_tool(2)).unwrap();
+        state.push(stop_block(2)).unwrap();
+        state.push(stop_message()).unwrap();
+        let content: Vec<_> = state
+            .finish()
+            .unwrap()
+            .into_iter()
+            .filter_map(|event| match event {
+                StreamEvent::ContentBlock(block) => Some(block),
+                _ => None,
+            })
+            .collect();
+        let message = crate::Message::assistant_with_content(content);
+        let encoded = serde_json::to_vec(&message).unwrap();
+        let restored: crate::Message = serde_json::from_slice(&encoded).unwrap();
+        let native = super::super::conversion::to_bedrock_message(&restored).unwrap();
+        let replayed = super::super::conversion::from_bedrock_message(&native);
+        assert_eq!(replayed.content.len(), 3);
+        for (block, expected) in replayed
+            .content
+            .iter()
+            .zip(["thinking-signature", "progress-signature"])
+        {
+            assert!(
+                matches!(block, ContentBlock::Thinking { thinking, signature }
+                if thinking.is_empty() && signature == expected)
+            );
+        }
+        assert!(
+            matches!(&replayed.content[2], ContentBlock::ToolUse(tool) if tool.input == serde_json::json!({}))
+        );
+        assert_eq!(serde_json::to_vec(&replayed).unwrap(), encoded);
+    }
+
+    #[test]
     fn redacted_reasoning_preserves_binary_chunks() {
         let mut state = StreamAssembler::default();
         for bytes in [vec![0, 255], vec![128, 1]] {

@@ -733,6 +733,17 @@ impl BedrockProvider {
             self.output_schema.as_ref(),
             thinking,
         )?;
+        if model_id == "anthropic.claude-opus-5-5"
+            && (self.temperature.is_some()
+                || self.top_p.is_some()
+                || ["temperature", "top_p", "top_k"]
+                    .iter()
+                    .any(|key| fields.get(key).is_some()))
+        {
+            return Err(invalid(
+                "Opus 5.5 requires omitting temperature, top_p, and top_k; use thinking effort instead",
+            ));
+        }
         if model_id == "anthropic.claude-opus-4-7"
             && (self.temperature.is_some() || self.top_p.is_some() || fields.get("top_k").is_some())
         {
@@ -779,6 +790,7 @@ impl BedrockProvider {
         let adaptive = matches!(
             model_id,
             "anthropic.claude-opus-5"
+                | "anthropic.claude-opus-5-5"
                 | "anthropic.claude-sonnet-5"
                 | "anthropic.claude-opus-4-7"
                 | "anthropic.claude-opus-4-6-v1"
@@ -786,7 +798,8 @@ impl BedrockProvider {
                 | "anthropic.claude-fable-5"
                 | "anthropic.claude-fable-5-1"
         );
-        let adaptive_only = model_id.starts_with("anthropic.claude-fable-");
+        let adaptive_only = model_id == "anthropic.claude-opus-5-5"
+            || model_id.starts_with("anthropic.claude-fable-");
         let manual = matches!(
             model_id,
             "anthropic.claude-3-7-sonnet-20250219-v1:0"
@@ -857,12 +870,14 @@ impl BedrockProvider {
                 "xhigh" => matches!(
                     model_id,
                     "anthropic.claude-opus-5"
+                        | "anthropic.claude-opus-5-5"
                         | "anthropic.claude-opus-4-6-v1"
                         | "anthropic.claude-fable-5-1"
                 ),
                 "max" => matches!(
                     model_id,
                     "anthropic.claude-opus-5"
+                        | "anthropic.claude-opus-5-5"
                         | "anthropic.claude-opus-4-6-v1"
                         | "anthropic.claude-sonnet-4-6"
                         | "anthropic.claude-fable-5-1"
@@ -1035,6 +1050,16 @@ impl BedrockProvider {
         tools: Vec<BedrockTool>,
         system_prompt: Option<String>,
     ) -> Result<ConverseRequest, ProviderError> {
+        if crate::models::bedrock_model_descriptor(&self.base_model_id)
+            .is_some_and(|model| model.model_id == "anthropic.claude-opus-5-5")
+            && messages.last().is_some_and(|message| {
+                message.role() == &aws_sdk_bedrockruntime::types::ConversationRole::Assistant
+            })
+        {
+            return Err(ProviderError::Configuration(
+                "Opus 5.5 does not support assistant prefill; end the request with a user message or tool result".into(),
+            ));
+        }
         let mut request = ConverseRequest {
             model_id: self.effective_model_id(),
             messages,
@@ -1979,6 +2004,48 @@ mod tests {
             .generate_stream(vec![Message::user("fixture")], vec![], None)
             .await
             .is_err());
+        assert_eq!(*client.converse_call_count.lock().unwrap(), 0);
+        assert_eq!(*client.stream_call_count.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn opus55_invalid_settings_and_prefill_never_dispatch() {
+        let client = Arc::new(TestBedrockClient::new());
+        let model = crate::RuntimeBedrockModel::new(
+            "Claude Opus 5.5",
+            "us.anthropic.claude-opus-5-5",
+            128_000,
+            4096,
+        )
+        .unwrap();
+        let provider = BedrockProvider::with_bedrock_client(client.clone(), model);
+        for (configured, messages) in [
+            (
+                provider.clone().with_disabled_thinking(),
+                vec![Message::user("fixture")],
+            ),
+            (
+                provider.clone().with_tool_choice(BedrockToolChoice::Any),
+                vec![Message::user("fixture")],
+            ),
+            (
+                provider.clone().with_temperature(0.0),
+                vec![Message::user("fixture")],
+            ),
+            (
+                provider,
+                vec![Message::user("fixture"), Message::assistant("prefill")],
+            ),
+        ] {
+            assert!(matches!(
+                configured.generate(messages.clone(), vec![], None).await,
+                Err(ProviderError::Configuration(_))
+            ));
+            assert!(matches!(
+                configured.generate_stream(messages, vec![], None).await,
+                Err(ProviderError::Configuration(_))
+            ));
+        }
         assert_eq!(*client.converse_call_count.lock().unwrap(), 0);
         assert_eq!(*client.stream_call_count.lock().unwrap(), 0);
     }

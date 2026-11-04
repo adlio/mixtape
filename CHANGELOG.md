@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-04
+
+### Added
+
+- Claude Opus 5.5 Bedrock catalog entry, adaptive thinking and all five effort levels, with five-minute and one-hour prompt-cache checkpoints on Converse.
+- Opus 5.5 request validation rejects disabled/manual thinking, forced tool calls, and sampling parameters before dispatch. Signed thinking blocks remain intact through streaming and persisted tool replay.
+- Opt-in Opus 5.5 streaming and non-streaming reasoning/replay tests. Catalog membership and offline tests do not establish live account access or summary quality.
+
 ## [0.5.0] - 2026-09-23
 
 ### Added

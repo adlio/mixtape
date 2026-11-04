@@ -115,6 +115,7 @@ pub(super) fn validate(
         let extended = matches!(
             model_id,
             "anthropic.claude-opus-5"
+                | "anthropic.claude-opus-5-5"
                 | "anthropic.claude-sonnet-5"
                 | "anthropic.claude-opus-4-8"
                 | "anthropic.claude-opus-4-7"
@@ -150,6 +151,11 @@ pub(super) fn validate(
         choice,
         Some(BedrockToolChoice::Any | BedrockToolChoice::Tool(_))
     ) {
+        if model_id == "anthropic.claude-opus-5-5" {
+            return Err(invalid(
+                "Opus 5.5 does not support forced tool choice; use Auto or None",
+            ));
+        }
         if !model_id.starts_with("anthropic.claude-") && !model_id.starts_with("amazon.nova-") {
             return Err(invalid(
                 "Forced tool choice is not verified for this model on Converse",

@@ -1,8 +1,8 @@
 //! Bedrock model descriptors for configuration-driven applications.
 //!
-//! Reviewed against AWS model cards on 2026-09-22. A catalog entry is not proof
-//! of account access or a tested multi-turn tool loop. Card limit labels are
-//! retained verbatim; they are not silently converted into exact token counts.
+//! Reviewed against AWS model cards on 2026-09-22 (Opus 5.5: 2026-09-25).
+//! A catalog entry is not proof of account access or a tested multi-turn tool loop.
+//! Card limit labels are retained verbatim, not converted into exact token counts.
 
 use crate::model::RuntimeBedrockModel;
 use crate::provider::ProviderError;
@@ -67,10 +67,19 @@ macro_rules! descriptor {
     };
 }
 
-/// The 22 mapped model candidates. Historical typed models remain available;
+/// Mapped model candidates. Historical typed models remain available;
 /// routers and private aliases without a verified Bedrock identity are omitted.
 /// Library metadata does not establish permission to send any particular data.
 pub const BEDROCK_MODEL_CATALOG: &[BedrockModelDescriptor] = &[
+    descriptor!(
+        "anthropic.claude-opus-5-5",
+        "Claude Opus 5.5",
+        "1M",
+        Some("128K"),
+        Converse,
+        true,
+        "model-card-anthropic-claude-opus-5-5"
+    ),
     descriptor!(
         "anthropic.claude-opus-5",
         "Claude Opus 5.0",
@@ -292,7 +301,7 @@ mod tests {
 
     #[test]
     fn catalog_ids_are_unique_and_constructible_without_implicit_routing() {
-        assert_eq!(BEDROCK_MODEL_CATALOG.len(), 22);
+        assert_eq!(BEDROCK_MODEL_CATALOG.len(), 23);
         let mut seen = HashSet::new();
         for descriptor in BEDROCK_MODEL_CATALOG {
             assert!(seen.insert(descriptor.model_id));
